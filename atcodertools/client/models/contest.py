@@ -10,7 +10,8 @@ class Contest:
         return self.contest_id
 
     def get_url(self):
-        return "https://{}.contest.atcoder.jp/".format(self.contest_id)
+        # return "https://{}.contest.atcoder.jp/".format(self.contest_id)
+        return "https://atcoder.jp/contests/{}/".format(self.contest_id)
 
     def get_new_url(self):
         return "https://atcoder.jp/contests/{}/".format(self.contest_id)
