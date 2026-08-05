@@ -163,6 +163,7 @@ def prepare_procedure(atcoder_client: AtCoderClient,
             problem_dir_path)
 
     output_splitter()
+    time.sleep(0.5)
 
 
 def func(argv: Tuple[AtCoderClient, Problem, Config]):
