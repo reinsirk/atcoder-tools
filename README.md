@@ -106,9 +106,12 @@ $ atcoder-tools gen  [contest_id] --without-login
 `gen`には、AtCoder ProblemsのバーチャルコンテストURLまたはIDも指定できます。
 各問題のサンプル入出力をAtCoderから取得し、コードと`metadata.json`を生成します。
 
+以下は、コンテスト名が`練習コンテスト`の場合の例です。
+`{virtual_contest_id}`は対象バチャコンのIDに置き換えてください。
+
 ```console
-atcoder-tools gen 'https://kenkoooo.com/atcoder/#/contest/show/5337d86a-655c-487a-83f1-6d1b97115757' --without-login
-cd ~/atcoder-workspace/'WACPAC 練習会 #69'/A
+atcoder-tools gen 'https://kenkoooo.com/atcoder/#/contest/show/{virtual_contest_id}' --without-login
+cd ~/atcoder-workspace/練習コンテスト/A
 g++ main.cpp -o main
 atcoder-tools test
 ```
@@ -116,11 +119,10 @@ atcoder-tools test
 IDだけを指定する場合も同じ環境を生成します。
 
 ```console
-atcoder-tools gen 5337d86a-655c-487a-83f1-6d1b97115757 --without-login
+atcoder-tools gen '{virtual_contest_id}' --without-login
 ```
 
 保存先は`{workspace}/{バチャコン名}/A/`、`B/`、…です。
-例えば上のバチャコンでは`WACPAC 練習会 #69`というフォルダを作ります。
 日本語・空白・`#`はそのまま使い、フォルダ名に使えない文字（`/`、`\`、`:`など）は`_`に置き換えます。
 名前が空または取得できない場合はバチャコンIDを使います。
 バチャコンでの問題順にディレクトリ名を付けるため、元のコンテストで同じ問題番号だった問題も別々に保存されます。
