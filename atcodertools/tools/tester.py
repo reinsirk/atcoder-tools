@@ -5,6 +5,7 @@ import os
 import platform
 import re
 import sys
+import tempfile
 from pathlib import Path
 from typing import List, Tuple, Optional
 
@@ -19,7 +20,9 @@ from atcodertools.tools.models.metadata import Metadata, DEFAULT_METADATA
 from atcodertools.tools.utils import with_color
 from atcodertools.tools.compiler import compile_main_and_judge_programs, BadStatusCodeException
 from atcodertools.config.config import Config, ConfigType, USER_CONFIG_PATH
+from atcodertools.config.random_test_config import source_language
 from atcodertools.tools import get_default_config_path
+from atcodertools.tools.random_tester import run_random_tests, _run
 
 DEFAULT_EPS = 0.000000001
 
@@ -56,8 +59,9 @@ def is_executable_file(file_name):
 
 
 def infer_exec_file(filenames: List[str], excluded_exec_files: List[str]):
+    excluded_paths = {os.path.abspath(name) for name in excluded_exec_files}
     exec_files = [name for name in sorted(
-        filenames) if is_executable_file(name) and (name not in excluded_exec_files)]
+        filenames) if is_executable_file(name) and os.path.abspath(name) not in excluded_paths]
 
     if len(exec_files) == 0:
         raise NoExecutableFileError
@@ -113,7 +117,7 @@ def build_details_str(exec_res: ExecResult, input_file: str, output_file: str) -
 
 def run_for_samples(exec_file: str, sample_pair_list: List[Tuple[str, str]], timeout_sec: float,
                     judge_method: Judge = NormalJudge(), knock_out: bool = False,
-                    skip_io_on_success: bool = False, cwd="./") -> TestSummary:
+                    skip_io_on_success: bool = False, cwd="./", judge_command=None) -> TestSummary:
     success_count = 0
     has_error_output = False
     for in_sample_file, out_sample_file in sample_pair_list:
@@ -126,7 +130,18 @@ def run_for_samples(exec_file: str, sample_pair_list: List[Tuple[str, str]], tim
         with open(out_sample_file, 'r') as f:
             answer_text = f.read()
 
-        is_correct = exec_res.is_correct_output(answer_text, judge_method)
+        is_correct = (exec_res.status == ExecStatus.NORMAL if judge_command
+                      else exec_res.is_correct_output(answer_text, judge_method))
+        judge_result = None
+        if judge_command and exec_res.status == ExecStatus.NORMAL:
+            with tempfile.TemporaryDirectory(prefix="atcoder-output-judge-") as directory:
+                actual_path = Path(directory) / "actual.txt"
+                actual_path.write_text(exec_res.output)
+                empty_path = Path(directory) / "empty.txt"
+                empty_path.touch()
+                judge_result = _run(judge_command, empty_path, timeout_sec, os.path.abspath(cwd),
+                                    args=[os.path.abspath(in_sample_file), os.path.abspath(out_sample_file), str(actual_path)])
+                is_correct = judge_result.status == ExecStatus.NORMAL
         has_error_output = has_error_output or exec_res.has_stderr()
 
         if is_correct:
@@ -154,6 +169,8 @@ def run_for_samples(exec_file: str, sample_pair_list: List[Tuple[str, str]], tim
         if not is_correct or (exec_res.has_stderr() and not skip_io_on_success):
             print('{}\n'.format(build_details_str(
                 exec_res, in_sample_file, out_sample_file)))
+            if judge_result:
+                print("[Judge: {}]\n{}{}".format(judge_result.status.value, judge_result.output, judge_result.stderr))
 
         if knock_out and not is_correct:
             print('Stop testing ...')
@@ -172,7 +189,7 @@ def validate_sample_pair(in_sample_file, out_sample_file):
 
 
 def run_single_test(exec_file, in_sample_file_list, out_sample_file_list, timeout_sec: float, case_num: int,
-                    judge_method: Judge, cwd: str, judge_program_language: Language) -> bool:
+                    judge_method: Judge, cwd: str, judge_program_language: Language, judge_command=None) -> bool:
     def single_or_none(lst: List):
         if len(lst) == 1:
             return lst[0]
@@ -192,14 +209,14 @@ def run_single_test(exec_file, in_sample_file_list, out_sample_file_list, timeou
     validate_sample_pair(in_sample_file, out_sample_file)
 
     test_summary = run_for_samples(
-        exec_file, [(in_sample_file, out_sample_file)], timeout_sec, judge_method, cwd=cwd)
+        exec_file, [(in_sample_file, out_sample_file)], timeout_sec, judge_method, cwd=cwd, judge_command=judge_command)
 
     return test_summary.success_count == 1 and not test_summary.has_error_output
 
 
 def run_all_tests(exec_file, in_sample_file_list, out_sample_file_list, timeout_sec: float, knock_out: bool,
                   skip_stderr_on_success: bool, judge_method: Judge, cwd: str,
-                  judge_program_language: Language) -> bool:
+                  judge_program_language: Language, judge_command=None) -> bool:
     if len(in_sample_file_list) != len(out_sample_file_list):
         logger.error("{0}{1}{2}".format(
             "The number of the sample inputs and outputs are different.\n",
@@ -212,7 +229,8 @@ def run_all_tests(exec_file, in_sample_file_list, out_sample_file_list, timeout_
         samples.append((in_sample_file, out_sample_file))
 
     test_summary = run_for_samples(
-        exec_file, samples, timeout_sec, judge_method, knock_out, skip_stderr_on_success, cwd=cwd)
+        exec_file, samples, timeout_sec, judge_method, knock_out, skip_stderr_on_success, cwd=cwd,
+        judge_command=judge_command)
 
     if len(samples) == 0:
         print("No test cases")
@@ -298,6 +316,18 @@ def main(prog, args) -> bool:
                         type=int,
                         default=None)
 
+    parser.add_argument("--random-test", action="store_true",
+                        help="Compare main and naive on inputs produced by the generator")
+    parser.add_argument("--iterations", type=int, default=None,
+                        help="Number of random tests (0: until failure or Ctrl+C; default: 1000)")
+    parser.add_argument("--random-test-mode", choices=("auto", "normal", "judge", "interactive"), default=None,
+                        help="Override the random-test judging mode configured in TOML")
+    special_judge = parser.add_mutually_exclusive_group()
+    special_judge.add_argument("--judge-exec", default=None,
+                               help="Output validator command for sample or random tests (exit 0: accepted)")
+    special_judge.add_argument("--interactor-exec", default=None,
+                               help="Random-test local interactor command (exit 0: accepted)")
+
     parser.add_argument("--dir", '-d',
                         help="Target directory to test. [Default] Current directory",
                         default=".")
@@ -357,6 +387,18 @@ def main(prog, args) -> bool:
                         default=None)
 
     args = parser.parse_args(args)
+    if args.random_test and args.num is not None:
+        parser.error("--num cannot be combined with --random-test; use --iterations")
+    if args.iterations is not None and (not args.random_test or args.iterations < 0):
+        parser.error("--iterations requires --random-test and a non-negative integer")
+    if (args.interactor_exec or args.random_test_mode) and not args.random_test:
+        parser.error("--interactor-exec and --random-test-mode require --random-test")
+    if args.random_test_mode == "normal" and (args.judge_exec or args.interactor_exec):
+        parser.error("Normal mode cannot be combined with --judge-exec or --interactor-exec")
+    if args.random_test_mode == "judge" and args.interactor_exec:
+        parser.error("Judge mode cannot be combined with --interactor-exec")
+    if args.random_test_mode == "interactive" and args.judge_exec:
+        parser.error("Interactive mode cannot be combined with --judge-exec")
     if args.config is None:
         if os.path.exists(USER_CONFIG_PATH):
             args.config = USER_CONFIG_PATH
@@ -372,7 +414,12 @@ def main(prog, args) -> bool:
     # TODO: https://github.com/kyuridenamida/atcoder-tools/issues/177
 
     with open(args.config, "r") as f:
-        config = Config.load(f, {ConfigType.TESTER}, args, lang.name)
+        config = Config.load(f, {ConfigType.TESTER, ConfigType.RANDOM_TEST}, args, lang.name)
+    if args.random_test_mode is None:
+        if args.judge_exec:
+            config.random_test_config.mode = "judge"
+        elif args.interactor_exec:
+            config.random_test_config.mode = "interactive"
 
     if args.timeout is None:
         if metadata.timeout_ms is None:
@@ -393,6 +440,12 @@ def main(prog, args) -> bool:
     if isinstance(judge_method, DecimalJudge):
         logger.info("Decimal number judge is enabled. type={}, diff={}".format(
             judge_method.error_type.value, judge_method.diff))
+
+    if args.random_test:
+        if args.timeout <= 0:
+            parser.error("--timeout must be positive")
+        return run_random_tests(metadata, config, args.dir, args.timeout, judge_method, args.exec,
+                                args.judge_exec, args.interactor_exec)
 
     if args.exec is not None:
         exec_file = args.exec
@@ -419,8 +472,19 @@ def main(prog, args) -> bool:
         # TODO Have a smarter strategy to detect judge program
         excluded_exec_files = [
             os.path.join(args.dir, "judge"),
-            os.path.join(args.dir, "judge.exe")
+            os.path.join(args.dir, "judge.exe"),
+            os.path.join(args.dir, lang.get_code_filename("naive")),
+            os.path.join(args.dir, lang.get_exec_filename("naive")),
+            os.path.join(args.dir, config.random_test_config.generator_filename),
+            os.path.join(args.dir, config.random_test_config.generator_language.get_exec_filename(
+                Path(config.random_test_config.generator_filename).stem))
         ]
+        for filename in (config.random_test_config.judge_filename, config.random_test_config.interactor_filename):
+            if filename:
+                excluded_exec_files.extend([os.path.join(args.dir, filename), os.path.join(
+                    args.dir, source_language(filename).get_exec_filename(Path(filename).stem))])
+        if args.judge_exec:
+            excluded_exec_files.extend(os.path.join(args.dir, token) for token in args.judge_exec.split(" "))
         exec_file = infer_exec_file(
             glob.glob(os.path.join(glob.escape(args.dir), '*')), excluded_exec_files)
         logger.info("Inferred exec file: {}".format(exec_file))
@@ -428,10 +492,10 @@ def main(prog, args) -> bool:
     if args.num is None:
         return run_all_tests(exec_file, in_sample_file_list, out_sample_file_list, args.timeout, args.knock_out,
                              args.skip_almost_ac_feedback, judge_method, args.dir,
-                             lang)  # TODO: pass judge_lang instead
+                             lang, args.judge_exec)  # TODO: pass judge_lang instead
     else:
         return run_single_test(exec_file, in_sample_file_list, out_sample_file_list, args.timeout, args.num,
-                               judge_method, args.dir, lang)
+                               judge_method, args.dir, lang, args.judge_exec)
 
 
 if __name__ == "__main__":

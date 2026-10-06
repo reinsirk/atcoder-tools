@@ -21,6 +21,7 @@ from atcodertools.common.language import ALL_LANGUAGES, CPP
 from atcodertools.common.logging import logger
 from atcodertools.config.config import Config
 from atcodertools.constprediction.constants_prediction import predict_constants
+from atcodertools.constprediction.problem_type_prediction import predict_problem_type
 from atcodertools.fileutils.create_contest_file import create_examples, \
     create_code
 from atcodertools.fmtprediction.models.format_prediction_result import FormatPredictionResult
@@ -29,6 +30,7 @@ from atcodertools.fmtprediction.predict_format import NoPredictionResultError, \
 from atcodertools.tools import get_default_config_path
 from atcodertools.tools.models.metadata import Metadata
 from atcodertools.tools.utils import with_color
+from atcodertools.tools.random_tester import prepare_random_test_files
 from atcodertools.config.config import ConfigType, USER_CONFIG_PATH
 
 
@@ -121,6 +123,9 @@ def prepare_procedure(atcoder_client: AtCoderClient,
                 new_path))
 
     constants = predict_constants(content.original_html)
+    problem_type = predict_problem_type(content.original_html) if config.random_test_config.enabled else "batch"
+    if problem_type != "batch":
+        emit_info("Detected {} problem; select the appropriate random-test judging mode".format(problem_type))
 
     try:
         prediction_result = predict_format(content)
@@ -138,15 +143,18 @@ def prepare_procedure(atcoder_client: AtCoderClient,
     with open(template_code_path, "r") as f:
         template = f.read()
 
-    create_code(code_generator(
+    source_code = code_generator(
         CodeGenArgs(
             template,
             prediction_result.format,
             constants,
             config.code_style_config
-        )),
-        code_file_path)
+        ))
+    create_code(source_code, code_file_path)
     emit_info("Saved code to {}".format(code_file_path))
+
+    if config.random_test_config.enabled:
+        prepare_random_test_files(problem_dir_path, source_code, constants, config)
 
     # Save metadata
     metadata_path = os.path.join(problem_dir_path, "metadata.json")
@@ -156,7 +164,8 @@ def prepare_procedure(atcoder_client: AtCoderClient,
              config.etc_config.out_example_format.replace("{}", "*"),
              lang,
              constants.judge_method,
-             constants.timeout
+             constants.timeout,
+             problem_type
              ).save_to(metadata_path)
     emit_info("Saved metadata to {}".format(metadata_path))
 
@@ -167,6 +176,7 @@ def prepare_procedure(atcoder_client: AtCoderClient,
             problem_dir_path)
 
     output_splitter()
+    time.sleep(0.5)
 
 
 def func(argv: Tuple[AtCoderClient, Problem, Config]):
@@ -250,7 +260,8 @@ def get_config(args: argparse.Namespace) -> Config:
     def _load(path: str) -> Config:
         logger.info("Going to load {} as config".format(path))
         with open(path, 'r') as f:
-            return Config.load(f, {ConfigType.CODESTYLE, ConfigType.POSTPROCESS, ConfigType.ETC}, args)
+            return Config.load(f, {ConfigType.CODESTYLE, ConfigType.POSTPROCESS, ConfigType.ETC,
+                                   ConfigType.RANDOM_TEST}, args)
 
     if args.config:
         return _load(args.config)

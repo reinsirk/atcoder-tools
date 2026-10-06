@@ -46,12 +46,14 @@ def run_program(exec_file: str, input_file: str, timeout_sec: float, args=None, 
         command = shlex.split(exec_file) + args
     try:
         elapsed_sec = -time.time()
-        proc = subprocess.run(
-            command, stdin=open(input_file, 'r'), universal_newlines=True, timeout=timeout_sec,
-            stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE,
-            cwd=current_working_dir
-        )
+        with open(input_file, 'r') as input_stream:
+            proc = subprocess.run(
+                command, stdin=input_stream,
+                universal_newlines=True, timeout=timeout_sec,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                cwd=current_working_dir
+            )
 
         if proc.returncode == 0:
             code = ExecStatus.NORMAL

@@ -87,7 +87,7 @@ CPP = Language(
     name="cpp",
     display_name="C++",
     extension="cpp",
-    submission_lang_pattern=re.compile(".*C\\+\\+\\s?23 .*"),
+    submission_lang_pattern=re.compile(".*C\\+\\+.*23.*(gcc|GCC).*"),
     default_code_generator=cpp.main,
     default_template_path=get_default_template_path('cpp'),
     compile_command="g++ {filename}.cpp -o {filename} -std=c++23",
