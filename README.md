@@ -101,6 +101,31 @@ atcoder-tools test
 $ atcoder-tools gen  [contest_id] --without-login
 ```
 
+### AtCoder Problemsのバーチャルコンテスト
+
+`gen`には、AtCoder ProblemsのバーチャルコンテストURLまたはIDも指定できます。
+各問題のサンプル入出力をAtCoderから取得し、コードと`metadata.json`を生成します。
+
+```console
+atcoder-tools gen 'https://kenkoooo.com/atcoder/#/contest/show/5337d86a-655c-487a-83f1-6d1b97115757' --without-login
+cd ~/atcoder-workspace/5337d86a-655c-487a-83f1-6d1b97115757/A
+g++ main.cpp -o main
+atcoder-tools test
+```
+
+IDだけを指定する場合も同じ環境を生成します。
+
+```console
+atcoder-tools gen 5337d86a-655c-487a-83f1-6d1b97115757 --without-login
+```
+
+保存先は`{workspace}/{バチャコンID}/A/`、`B/`、…です。
+バチャコンでの問題順にディレクトリ名を付けるため、元のコンテストで同じ問題番号だった問題も別々に保存されます。
+`metadata.json`には元のコンテストIDと問題番号を保存し、通常のコンテストと同じ`test`・`submit`を使えます。
+`--workspace`、`--lang`、`--parallel`、`--skip-existing-problems`や設定ファイルも通常どおり使えます。
+
+対象は公開されているバチャコンです。取得するテストケースは問題文のサンプルです。
+
 ### gen の詳細
 ```
 usage: atcoder-tools gen
@@ -110,7 +135,7 @@ usage: atcoder-tools gen
        contest_id
 
 positional arguments:
-  contest_id            Contest ID (e.g. arc001)
+  contest_id            Contest ID (e.g. arc001), or AtCoder Problems virtual contest URL/ID
 
 optional arguments:
   -h, --help            show this help message and exit
