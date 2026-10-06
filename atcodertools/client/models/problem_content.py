@@ -109,6 +109,12 @@ class ProblemContent:
         ):
             element.extract()
 
+        non_batch_context = ProblemContent._non_batch_input_context(soup)
+        if non_batch_context is not None:
+            # Interaction transcripts and output-only examples cannot be used
+            # as ordinary sample input/output pairs.
+            return "", [], normalize_context(non_batch_context), []
+
         # Focus on AtCoder's usual contest HTML structure.
         parts = soup.select('.part')
         if parts:
@@ -164,6 +170,29 @@ class ProblemContent:
             normalize_context(input_format_context),
             samples,
         )
+
+    @staticmethod
+    def _non_batch_input_context(soup) -> Optional[str]:
+        for section in soup.select('section'):
+            heading = section.find('h3')
+            if heading is None:
+                continue
+
+            title = remove_non_jp_characters(heading.get_text())
+            context = section.get_text(" ", strip=True)
+            compact_context = "".join(context.split())
+
+            if title == "問題文" and "インタラクティブな問題" in compact_context:
+                return context
+
+            if title == "入力" and not section.find('pre'):
+                if any(marker in compact_context for marker in (
+                    "入力は与えられない",
+                    "入力は与えられません",
+                )):
+                    return context
+
+        return None
 
     @staticmethod
     def _primary_strategy(soup):
