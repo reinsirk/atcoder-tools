@@ -1,5 +1,5 @@
 import re
-from typing import List, Optional
+from typing import List, Optional, Tuple
 from urllib.parse import urlparse
 from uuid import UUID
 
@@ -53,12 +53,20 @@ class AtCoderProblemsClient:
                 "Failed to fetch AtCoder Problems data from {}: {}".format(url, e)) from e
 
     def download_problem_list(self, contest_id: str) -> List[Problem]:
+        return self.download_contest(contest_id)[1]
+
+    def download_contest(self, contest_id: str) -> Tuple[str, List[Problem]]:
+        """Fetch the title and ordered problems together, using one contest request."""
         contest_id = str(UUID(contest_id))
         data = self._get_json(
             BASE_URL + "/internal-api/contest/get/" + contest_id)
         if not isinstance(data, dict) or not isinstance(data.get("problems"), list):
             raise AtCoderProblemsError(
                 "Invalid virtual contest response: expected a problem list.")
+        info = data.get("info")
+        title = info.get("title", "") if isinstance(info, dict) else ""
+        if not isinstance(title, str):
+            title = ""
         entries = data["problems"]
         if not entries:
             raise AtCoderProblemsError(
@@ -92,4 +100,4 @@ class AtCoderProblemsClient:
                 raise AtCoderProblemsError(
                     "Invalid AtCoder Problems data for problem {}.".format(problem_id))
             result.append(Problem(Contest(contest_id), alphabet, problem_id))
-        return result
+        return title, result

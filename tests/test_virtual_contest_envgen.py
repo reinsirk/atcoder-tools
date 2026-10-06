@@ -19,7 +19,7 @@ from atcodertools.config.postprocess_config import PostprocessConfig
 from atcodertools.tools import envgen, get_default_config_path, tester
 from atcodertools.tools.models.metadata import Metadata
 from tests.test_atcoder_problems import (
-    CONTEST_ID, CONTEST_URL, CONTEST_DATA, PROBLEM_DATA, json_response,
+    CONTEST_ID, CONTEST_TITLE, CONTEST_URL, CONTEST_DATA, PROBLEM_DATA, json_response,
 )
 
 
@@ -49,7 +49,8 @@ class TestVirtualContestEnvGen(unittest.TestCase):
         )
         envgen.prepare_contest(client, CONTEST_URL, self.config)
         client.download_problem_list.assert_not_called()
-        contest_dir = self.workspace / CONTEST_ID
+        contest_dir = self.workspace / CONTEST_TITLE
+        self.assertFalse((self.workspace / CONTEST_ID).exists())
         self.assertEqual(sorted(os.listdir(contest_dir)),
                          ["A", "B", "C", "contest-hook"])
         self.assertFalse((self.workspace / "arc058").exists())
@@ -78,14 +79,57 @@ class TestVirtualContestEnvGen(unittest.TestCase):
                          p["id"] for p in PROBLEM_DATA])
 
     @mock.patch("atcodertools.tools.envgen.AtCoderProblemsClient")
+    def test_cpp_compile_and_test_with_spaces_and_brackets_in_title(self, problems_client):
+        title = "[WACPAC] 練習会 #69"
+        problem = Problem(Contest("arc058"), "C", "arc058_a")
+        problems_client.return_value.download_contest.return_value = (title, [
+                                                                      problem])
+        client = mock.Mock(spec=AtCoderClient)
+        client.download_problem_content.return_value = self.content
+        self.config.code_style_config = CodeStyleConfig(
+            workspace_dir=str(self.workspace), lang="cpp")
+        envgen.prepare_contest(client, CONTEST_ID, self.config)
+        problem_dir = self.workspace / title / "A"
+        (problem_dir / "main.cpp").write_text(
+            '#include <iostream>\nint main() { int n; std::cin >> n; std::cout << n * 2 << "\\n"; }\n')
+        args = ["--dir", str(problem_dir), "--config",
+                get_default_config_path()]
+        self.assertTrue(tester.main("", args + ["--compile-before-testing"]))
+        self.assertTrue(tester.main("", args))
+
+    @mock.patch("atcodertools.tools.envgen.AtCoderProblemsClient")
+    def test_titles_are_safe_directory_names(self, problems_client):
+        problem = Problem(Contest("arc058"), "C", "arc058_a")
+        client = mock.Mock(spec=AtCoderClient)
+        client.download_problem_content.return_value = self.content
+        titles = [
+            ("../outside", ".._outside"),
+            ('a/b\\c:d*e?f"g<h>i|j\x00k', "a_b_c_d_e_f_g_h_i_j_k"),
+            ("NUL.txt", "_NUL.txt"),
+            ("練習会" * 100, ("練習会" * 100).encode("utf-8")[:240].decode("utf-8")),
+            ("", CONTEST_ID),
+            ("   ", CONTEST_ID),
+            ("..", CONTEST_ID),
+        ]
+        for title, expected in titles:
+            with self.subTest(title=title):
+                problems_client.return_value.download_contest.return_value = (title, [
+                                                                              problem])
+                envgen.prepare_contest(client, CONTEST_URL, self.config)
+                problem_dir = self.workspace / expected / "A"
+                self.assertTrue((problem_dir / "metadata.json").is_file())
+                self.assertTrue(
+                    problem_dir.resolve().is_relative_to(self.workspace))
+
+    @mock.patch("atcodertools.tools.envgen.AtCoderProblemsClient")
     def test_backup_and_skip_use_virtual_workspace(self, problems_client):
         problem = Problem(Contest("arc058"), "C", "arc058_a")
-        problems_client.return_value.download_problem_list.return_value = [
-            problem]
+        problems_client.return_value.download_contest.return_value = (CONTEST_TITLE, [
+                                                                      problem])
         client = mock.Mock(spec=AtCoderClient)
         client.download_problem_content.return_value = self.content
         envgen.prepare_contest(client, CONTEST_ID, self.config)
-        code_path = self.workspace / CONTEST_ID / "A" / "main.py"
+        code_path = self.workspace / CONTEST_TITLE / "A" / "main.py"
         code_path.write_text("my solution\n")
         self.config.etc_config.skip_existing_problems = True
         envgen.prepare_contest(client, CONTEST_ID, self.config)
@@ -100,8 +144,8 @@ class TestVirtualContestEnvGen(unittest.TestCase):
     @mock.patch("atcodertools.tools.envgen.AtCoderProblemsClient")
     def test_more_than_26_problems_have_distinct_directories(self, problems_client, prepare):
         problem = Problem(Contest("abc042"), "A", "abc042_a")
-        problems_client.return_value.download_problem_list.return_value = [
-            problem] * 28
+        problems_client.return_value.download_contest.return_value = (CONTEST_TITLE, [
+                                                                      problem] * 28)
         envgen.prepare_contest(
             mock.Mock(spec=AtCoderClient), CONTEST_ID, self.config)
         labels = [call.args[4] for call in prepare.call_args_list]
@@ -113,31 +157,33 @@ class TestVirtualContestEnvGen(unittest.TestCase):
     @mock.patch("atcodertools.tools.envgen.AtCoderProblemsClient")
     def test_parallel_preparation_passes_virtual_paths(self, problems_client, pool):
         problem = Problem(Contest("arc058"), "C", "arc058_a")
-        problems_client.return_value.download_problem_list.return_value = [
-            problem]
+        problems_client.return_value.download_contest.return_value = (CONTEST_TITLE, [
+                                                                      problem])
         client = mock.Mock(spec=AtCoderClient)
         client.download_problem_content.return_value = self.content
         pool.return_value.map.side_effect = lambda func, tasks: [
             func(task) for task in tasks]
         self.config.etc_config.parallel_download = True
         envgen.prepare_contest(client, CONTEST_ID, self.config)
-        metadata_path = self.workspace / CONTEST_ID / "A" / "metadata.json"
+        metadata_path = self.workspace / CONTEST_TITLE / "A" / "metadata.json"
         self.assertTrue(metadata_path.is_file())
 
     @mock.patch("atcodertools.tools.envgen.AtCoderClient")
     @mock.patch("atcodertools.tools.envgen.AtCoderProblemsClient")
     def test_cli_accepts_url_and_id_without_login(self, problems_client, client_class):
         problem = Problem(Contest("arc058"), "C", "arc058_a")
-        problems_client.return_value.download_problem_list.return_value = [
-            problem]
+        problems_client.return_value.download_contest.return_value = (CONTEST_TITLE, [
+                                                                      problem])
         client_class.return_value.download_problem_content.return_value = self.content
         for contest in [CONTEST_URL, CONTEST_ID]:
             envgen.main("", [contest, "--without-login", "--lang", "python",
                              "--workspace", str(self.workspace), "--config", get_default_config_path()])
         client_class.return_value.login.assert_not_called()
         client_class.return_value.download_problem_list.assert_not_called()
-        self.assertEqual(problems_client.return_value.download_problem_list.call_args_list,
+        self.assertEqual(problems_client.return_value.download_contest.call_args_list,
                          [mock.call(CONTEST_ID), mock.call(CONTEST_ID)])
+        metadata_path = self.workspace / CONTEST_TITLE / "A" / "metadata.json"
+        self.assertTrue(metadata_path.is_file())
 
     @mock.patch("atcodertools.tools.envgen.AtCoderClient")
     def test_invalid_url_fails_before_login(self, client):
@@ -150,7 +196,7 @@ class TestVirtualContestEnvGen(unittest.TestCase):
     @mock.patch("atcodertools.tools.envgen.AtCoderProblemsClient")
     @mock.patch("atcodertools.tools.envgen.time.sleep")
     def test_api_error_returns_failure_without_contest_retries(self, sleep, problems_client, client):
-        problems_client.return_value.download_problem_list.side_effect = AtCoderProblemsError(
+        problems_client.return_value.download_contest.side_effect = AtCoderProblemsError(
             "404 Not Found")
         with self.assertRaises(SystemExit) as ctx:
             envgen.main("", [CONTEST_ID, "--without-login", "--workspace", str(self.workspace),

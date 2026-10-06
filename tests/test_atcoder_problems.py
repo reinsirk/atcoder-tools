@@ -10,9 +10,10 @@ from atcodertools.client.atcoder_problems import (
 
 
 CONTEST_ID = "5337d86a-655c-487a-83f1-6d1b97115757"
+CONTEST_TITLE = "WACPAC 練習会 #69"
 CONTEST_URL = BASE_URL + "/#/contest/show/" + CONTEST_ID
 CONTEST_API_URL = BASE_URL + "/internal-api/contest/get/" + CONTEST_ID
-CONTEST_DATA = {"problems": [
+CONTEST_DATA = {"info": {"title": CONTEST_TITLE}, "problems": [
     {"id": "code_festival_2017_qualb_b", "order": 2},
     {"id": "arc058_a", "order": 0},
     {"id": "abc042_a", "order": 1},
@@ -49,6 +50,30 @@ class TestAtCoderProblems(unittest.TestCase):
         ]:
             with self.subTest(value=value), self.assertRaises(ValueError):
                 get_virtual_contest_id(value)
+
+    @mock.patch("atcodertools.client.atcoder_problems.requests.get")
+    def test_download_title_and_problems_with_one_contest_request(self, get):
+        get.side_effect = [json_response(
+            CONTEST_DATA), json_response(PROBLEM_DATA)]
+        title, problems = AtCoderProblemsClient().download_contest(CONTEST_ID)
+        self.assertEqual(title, CONTEST_TITLE)
+        self.assertEqual([p.problem_id for p in problems],
+                         [p["id"] for p in PROBLEM_DATA])
+        self.assertEqual(get.call_args_list, [
+            mock.call(CONTEST_API_URL, timeout=REQUEST_TIMEOUT),
+            mock.call(PROBLEMS_URL, timeout=REQUEST_TIMEOUT),
+        ])
+
+    @mock.patch("atcodertools.client.atcoder_problems.requests.get")
+    def test_missing_or_invalid_title_keeps_problem_list_available(self, get):
+        for info in [None, {}, {"title": None}, {"title": 123}]:
+            with self.subTest(info=info):
+                data = {"info": info, "problems": CONTEST_DATA["problems"]}
+                get.side_effect = [json_response(
+                    data), json_response(PROBLEM_DATA)]
+                title, problems = AtCoderProblemsClient().download_contest(CONTEST_ID)
+                self.assertEqual(title, "")
+                self.assertEqual(len(problems), 3)
 
     @mock.patch("atcodertools.client.atcoder_problems.requests.get")
     def test_download_in_order_with_original_contests_and_alphabets(self, get):

@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import argparse
 import os
+import re
 import shutil
 import sys
 import traceback
@@ -190,6 +191,17 @@ def _virtual_problem_alphabet(index: int) -> str:
     return alphabet
 
 
+def _virtual_contest_directory_name(title: str, contest_id: str) -> str:
+    # Keep Japanese, spaces and #, while making the title a single portable path component.
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]',
+                  "_", title).strip().rstrip(" .")
+    if re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]", name.split(".")[0], re.IGNORECASE):
+        name = "_" + name
+    name = name.encode("utf-8")[:240].decode("utf-8",
+                                             errors="ignore").rstrip(" .")
+    return name or contest_id
+
+
 def prepare_contest(atcoder_client: AtCoderClient,
                     contest_id: str,
                     config: Config,
@@ -198,8 +210,8 @@ def prepare_contest(atcoder_client: AtCoderClient,
                     retry_max_tries: int = 10):
     virtual_contest_id = get_virtual_contest_id(contest_id)
     if virtual_contest_id is not None:
-        contest_id = virtual_contest_id
-        problem_list = AtCoderProblemsClient().download_problem_list(contest_id)
+        title, problem_list = AtCoderProblemsClient().download_contest(virtual_contest_id)
+        contest_id = _virtual_contest_directory_name(title, virtual_contest_id)
         tasks = [(atcoder_client, problem, config, contest_id, _virtual_problem_alphabet(index))
                  for index, problem in enumerate(problem_list)]
     else:

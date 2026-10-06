@@ -431,9 +431,9 @@ def main(prog, args) -> bool:
         args.timeout *= config.tester_config.timeout_adjustment
 
     in_sample_file_list = sorted(
-        glob.glob(os.path.join(args.dir, metadata.sample_in_pattern)))
+        glob.glob(os.path.join(glob.escape(args.dir), metadata.sample_in_pattern)))
     out_sample_file_list = sorted(
-        glob.glob(os.path.join(args.dir, metadata.sample_out_pattern)))
+        glob.glob(os.path.join(glob.escape(args.dir), metadata.sample_out_pattern)))
 
     judge_method = _decide_judge_method(args, metadata, lang)
 
@@ -486,7 +486,7 @@ def main(prog, args) -> bool:
         if args.judge_exec:
             excluded_exec_files.extend(os.path.join(args.dir, token) for token in args.judge_exec.split(" "))
         exec_file = infer_exec_file(
-            glob.glob(os.path.join(args.dir, '*')), excluded_exec_files)
+            glob.glob(os.path.join(glob.escape(args.dir), '*')), excluded_exec_files)
         logger.info("Inferred exec file: {}".format(exec_file))
 
     if args.num is None:
