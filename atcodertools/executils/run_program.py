@@ -1,3 +1,5 @@
+import os
+import shlex
 import subprocess
 import time
 from enum import Enum
@@ -33,10 +35,19 @@ class ExecResult:
 def run_program(exec_file: str, input_file: str, timeout_sec: float, args=None, current_working_dir: str = None) -> ExecResult:
     if args is None:
         args = []
+    program_path = os.path.join(current_working_dir or os.curdir, exec_file)
+    if os.path.isfile(exec_file) or os.path.isfile(program_path):
+        command = [exec_file] + args
+    elif os.name == "nt":
+        command = exec_file
+        if args:
+            command += " " + subprocess.list2cmdline(args)
+    else:
+        command = shlex.split(exec_file) + args
     try:
         elapsed_sec = -time.time()
         proc = subprocess.run(
-            exec_file.split(" ") + args, stdin=open(input_file, 'r'), universal_newlines=True, timeout=timeout_sec,
+            command, stdin=open(input_file, 'r'), universal_newlines=True, timeout=timeout_sec,
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             cwd=current_working_dir

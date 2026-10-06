@@ -108,7 +108,7 @@ $ atcoder-tools gen  [contest_id] --without-login
 
 ```console
 atcoder-tools gen 'https://kenkoooo.com/atcoder/#/contest/show/5337d86a-655c-487a-83f1-6d1b97115757' --without-login
-cd ~/atcoder-workspace/5337d86a-655c-487a-83f1-6d1b97115757/A
+cd ~/atcoder-workspace/'WACPAC 練習会 #69'/A
 g++ main.cpp -o main
 atcoder-tools test
 ```
@@ -119,7 +119,10 @@ IDだけを指定する場合も同じ環境を生成します。
 atcoder-tools gen 5337d86a-655c-487a-83f1-6d1b97115757 --without-login
 ```
 
-保存先は`{workspace}/{バチャコンID}/A/`、`B/`、…です。
+保存先は`{workspace}/{バチャコン名}/A/`、`B/`、…です。
+例えば上のバチャコンでは`WACPAC 練習会 #69`というフォルダを作ります。
+日本語・空白・`#`はそのまま使い、フォルダ名に使えない文字（`/`、`\`、`:`など）は`_`に置き換えます。
+名前が空または取得できない場合はバチャコンIDを使います。
 バチャコンでの問題順にディレクトリ名を付けるため、元のコンテストで同じ問題番号だった問題も別々に保存されます。
 `metadata.json`には元のコンテストIDと問題番号を保存し、通常のコンテストと同じ`test`・`submit`を使えます。
 `--workspace`、`--lang`、`--parallel`、`--skip-existing-problems`や設定ファイルも通常どおり使えます。
