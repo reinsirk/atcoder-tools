@@ -29,3 +29,11 @@ save_no_session_cache=false
 skip_existing_problems=false
 in_example_format="in_{}.txt"
 out_example_format="out_{}.txt"
+
+[random_test]
+enabled=false # Create naive and generator sources alongside main during gen
+generator_filename="generate.cpp" # The extension selects the generator language
+iterations=1000 # 0: repeat until failure or Ctrl+C
+mode="auto" # 'normal', 'judge', 'interactive', or 'auto' (select from configured helpers)
+#judge_filename="judge.cpp" # argv: input path, reference output path, solution output path
+#interactor_filename="interactor.cpp" # argv: generated case path; communicate over stdio
