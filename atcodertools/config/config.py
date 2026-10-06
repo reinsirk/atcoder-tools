@@ -12,6 +12,7 @@ from atcodertools.config.etc_config import EtcConfig
 from atcodertools.config.postprocess_config import PostprocessConfig
 from atcodertools.config.tester_config import TesterConfig
 from atcodertools.config.submit_config import SubmitConfig
+from atcodertools.config.random_test_config import RandomTestConfig
 
 
 USER_CONFIG_PATH = os.path.join(expanduser("~"), ".atcodertools.toml")
@@ -24,6 +25,7 @@ class ConfigType(Enum):
     SUBMIT = "submit"
     ETC = "etc"
     COMPILER = "compiler"
+    RANDOM_TEST = "random_test"
 
 
 def _update_config_dict(target_dic: Dict[str, Any], update_dic: Dict[str, Any]):
@@ -62,12 +64,15 @@ class Config:
                  tester_config: TesterConfig = TesterConfig(),
                  submit_config: SubmitConfig = SubmitConfig(),
                  etc_config: EtcConfig = EtcConfig(),
+                 random_test_config: RandomTestConfig = None,
                  ):
         self.code_style_config = code_style_config
         self.postprocess_config = postprocess_config
         self.tester_config = tester_config
         self.submit_config = submit_config
         self.etc_config = etc_config
+        self.random_test_config = random_test_config or RandomTestConfig()
+        self.generator_code_style_config = None
 
     @classmethod
     def load(cls, fp: TextIO, get_config_type: Set[ConfigType], args: Optional[Namespace] = None, lang=None):
@@ -85,6 +90,14 @@ class Config:
             elif "codestyle" in config_dic:
                 lang = config_dic["codestyle"].get("lang", None)
 
+        if ConfigType.RANDOM_TEST in get_config_type:
+            random_test_dic = get_config_dic(config_dic, ConfigType.RANDOM_TEST, lang)
+            if args:
+                random_test_dic = _update_config_dict(
+                    random_test_dic, dict(iterations=getattr(args, "iterations", None),
+                                          mode=getattr(args, "random_test_mode", None)))
+            result.random_test_config = RandomTestConfig(**random_test_dic)
+
         if ConfigType.CODESTYLE in get_config_type:
             code_style_config_dic = get_config_dic(
                 config_dic, ConfigType.CODESTYLE, lang)
@@ -95,6 +108,17 @@ class Config:
                                                                 workspace_dir=args.workspace,
                                                                 lang=lang))
             result.code_style_config = CodeStyleConfig(**code_style_config_dic)
+            if result.random_test_config.enabled:
+                generator_lang = result.random_test_config.generator_language.name
+                if generator_lang == result.code_style_config.lang.name:
+                    result.generator_code_style_config = result.code_style_config
+                else:
+                    generator_style = get_config_dic(config_dic, ConfigType.CODESTYLE, generator_lang)
+                    generator_style["lang"] = generator_lang
+                    generator_style["template_file"] = config_dic.get("codestyle", {}).get(
+                        generator_lang, {}).get(
+                            "template_file", result.random_test_config.generator_language.default_template_path)
+                    result.generator_code_style_config = CodeStyleConfig(**generator_style)
         if ConfigType.POSTPROCESS in get_config_type:
             postprocess_config_dic = get_config_dic(
                 config_dic, ConfigType.POSTPROCESS)
