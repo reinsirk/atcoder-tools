@@ -16,6 +16,8 @@ from atcodertools.config.config import Config, ConfigType, USER_CONFIG_PATH
 from atcodertools.tools.models.metadata import Metadata
 from atcodertools.tools import get_default_config_path
 from atcodertools.executils.run_command import run_command
+from atcodertools.common.library_expander import ExpansionError, read_source
+from atcodertools.tools.expand import add_expansion_arguments, expand_code
 
 
 def main(prog, args, cookie_supplier=None, use_local_session_cache=True, client=None) -> bool:
@@ -96,6 +98,8 @@ def main(prog, args, cookie_supplier=None, use_local_session_cache=True, client=
                         type=str,
                         default=None)
 
+    add_expansion_arguments(parser)
+
     args = parser.parse_args(args)
     if args.config is None:
         if os.path.exists(USER_CONFIG_PATH):
@@ -115,8 +119,13 @@ def main(prog, args, cookie_supplier=None, use_local_session_cache=True, client=
             "{0} is not found! You need {0} to use this submission functionality.".format(metadata_file))
         return False
 
-    with open(args.config, "r") as f:
-        config = Config.load(f, {ConfigType.SUBMIT}, args, metadata.lang.name)
+    try:
+        with open(args.config, "r") as f:
+            config = Config.load(
+                f, {ConfigType.SUBMIT, ConfigType.EXPAND}, args, metadata.lang.name)
+    except (OSError, ValueError) as error:
+        logger.error(str(error))
+        return False
     if client is None:
         try:
             client = AtCoderClient()
@@ -128,7 +137,7 @@ def main(prog, args, cookie_supplier=None, use_local_session_cache=True, client=
             logger.error(e)
             return False
 
-    tester_args = []
+    tester_args = ['--config', args.config]
     if args.exec:
         tester_args += ["-e", args.exec]
     if args.dir:
@@ -139,6 +148,9 @@ def main(prog, args, cookie_supplier=None, use_local_session_cache=True, client=
         tester_args += ["-j", str(args.judge_type)]
     if args.error_value is not None:
         tester_args += ["-v", str(args.error_value)]
+    if args.include_dirs is not None:
+        for directory in args.include_dirs:
+            tester_args += ['--include-dir', directory]
 
     if args.force or tester.main("", tester_args):
         if not args.unlock_safety:
@@ -151,7 +163,7 @@ def main(prog, args, cookie_supplier=None, use_local_session_cache=True, client=
                                                 metadata.problem.contest.get_submissions_url(submission)), Fore.LIGHTRED_EX))
                     return False
 
-        code_path = args.code or os.path.join(args.dir, metadata.code_filename)
+        code_path = args.code or metadata.code_filename
 
         if config.submit_config.exec_before_submit:
             run_command(config.submit_config.exec_before_submit, args.dir)
@@ -161,13 +173,16 @@ def main(prog, args, cookie_supplier=None, use_local_session_cache=True, client=
             code_path = config.submit_config.submit_filename
             logger.info(f"changed to submitfile: {code_path}")
 
-        for encoding in ['utf8', 'utf-8_sig', 'cp932']:
-            try:
-                with open(os.path.join(args.dir, code_path), 'r', encoding=encoding) as f:
-                    source = f.read()
-                break
-            except UnicodeDecodeError:
-                logger.warning("code wasn't recognized as {}".format(encoding))
+        try:
+            source_path = os.path.join(args.dir, os.path.expanduser(code_path))
+            if metadata.lang.name == 'cpp':
+                source_path = expand_code(
+                    source_path, args.dir, config.expand_config, metadata.lang.name)
+                code_path = source_path
+            source = read_source(source_path)
+        except (ExpansionError, OSError) as error:
+            logger.error(str(error))
+            return False
         logger.info(
             "Submitting {} as {}".format(code_path, metadata.lang.name))
         try:

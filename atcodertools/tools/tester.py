@@ -18,6 +18,7 @@ from atcodertools.executils.run_program import ExecResult, ExecStatus, run_progr
 from atcodertools.tools.models.metadata import Metadata, DEFAULT_METADATA
 from atcodertools.tools.utils import with_color
 from atcodertools.tools.compiler import compile_main_and_judge_programs, BadStatusCodeException
+from atcodertools.tools.expand import add_include_arguments
 from atcodertools.config.config import Config, ConfigType, USER_CONFIG_PATH
 from atcodertools.tools import get_default_config_path
 
@@ -356,6 +357,7 @@ def main(prog, args) -> bool:
                                 get_default_config_path())),
                         default=None)
 
+    add_include_arguments(parser)
     args = parser.parse_args(args)
     if args.config is None:
         if os.path.exists(USER_CONFIG_PATH):
@@ -372,7 +374,8 @@ def main(prog, args) -> bool:
     # TODO: https://github.com/kyuridenamida/atcoder-tools/issues/177
 
     with open(args.config, "r") as f:
-        config = Config.load(f, {ConfigType.TESTER}, args, lang.name)
+        config = Config.load(
+            f, {ConfigType.TESTER, ConfigType.EXPAND}, args, lang.name)
 
     if args.timeout is None:
         if metadata.timeout_ms is None:
@@ -410,7 +413,8 @@ def main(prog, args) -> bool:
                 metadata.lang,
                 args.dir,
                 force_compile=force_compile,
-                compile_command=compile_command
+                compile_command=compile_command,
+                include_dirs=config.expand_config.include_dirs
             )
         except BadStatusCodeException as e:
             raise e

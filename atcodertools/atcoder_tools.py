@@ -11,6 +11,7 @@ from atcodertools.tools.submit import main as submit_main
 from atcodertools.tools.codegen import main as codegen_main
 from atcodertools.tools.compiler import main as compiler_main
 from atcodertools.tools.setter import main as setter_main
+from atcodertools.tools.expand import main as expand_main
 from atcodertools.release_management.version import __version__
 from colorama import Fore, Style
 
@@ -40,7 +41,7 @@ def notify_if_latest_version_found():
 def main():
     notify_if_latest_version_found()
 
-    if len(sys.argv) < 2 or sys.argv[1] not in ("gen", "test", "submit", "codegen", "compile", "set", "version"):
+    if len(sys.argv) < 2 or sys.argv[1] not in ("gen", "test", "submit", "codegen", "compile", "set", "expand", "version"):
         print("Usage:")
         print("{} gen -- to generate workspace".format(sys.argv[0]))
         print(
@@ -48,6 +49,8 @@ def main():
         print(
             "{} compile -- to compile codes in your workspace".format(sys.argv[0]))
         print("{} test -- to test codes in your workspace".format(sys.argv[0]))
+        print(
+            "{} expand -- to save a source with custom C++ libraries expanded".format(sys.argv[0]))
         print(
             "{} submit -- to submit a code to the contest system".format(sys.argv[0]))
         print(
@@ -67,6 +70,9 @@ def main():
 
     if sys.argv[1] == "submit":
         exit_program(submit_main(prog, args))
+
+    if sys.argv[1] == "expand":
+        exit_program(expand_main(prog, args))
 
     if sys.argv[1] == "codegen":
         codegen_main(prog, args)

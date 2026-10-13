@@ -8,13 +8,16 @@ import os
 import pathlib
 from atcodertools.config.config import Config, ConfigType, USER_CONFIG_PATH
 from atcodertools.tools import get_default_config_path
+from atcodertools.common.library_expander import resolve_include_dirs
+from atcodertools.tools.expand import add_include_arguments
 
 
 class BadStatusCodeException(Exception):
     pass
 
 
-def _compile(code_filename: str, exec_filename: str, compile_command: str, cwd: str, force_compile: bool) -> None:
+def _compile(code_filename: str, exec_filename: str, compile_command: str, cwd: str, force_compile: bool,
+             env=None) -> None:
     if not force_compile:
         code_path = pathlib.Path(os.path.join(cwd, code_filename))
         exec_path_name = os.path.join(cwd, exec_filename)
@@ -24,13 +27,14 @@ def _compile(code_filename: str, exec_filename: str, compile_command: str, cwd: 
             return
 
     print("Compiling... (command: `{}`)".format(compile_command))
-    code, stdout = run_command_with_returncode(compile_command, cwd)
+    code, stdout = run_command_with_returncode(compile_command, cwd, env=env)
     print(stdout)
     if code != 0:
         raise BadStatusCodeException
 
 
-def compile_main_and_judge_programs(lang: Language, cwd="./", force_compile=False, compile_command=None) -> None:
+def compile_main_and_judge_programs(lang: Language, cwd="./", force_compile=False, compile_command=None,
+                                    include_dirs=()) -> None:
     print("[Main Program]")
     if compile_command is None:
         compile_command = lang.get_compile_command('main')
@@ -38,9 +42,20 @@ def compile_main_and_judge_programs(lang: Language, cwd="./", force_compile=Fals
     code_filename = lang.get_code_filename('main')
     exec_filename = lang.get_exec_filename('main')
 
+    env = None
+    if lang.name == 'cpp' and include_dirs:
+        paths = resolve_include_dirs(cwd, include_dirs)
+        env = os.environ.copy()
+        existing = env.get('CPLUS_INCLUDE_PATH')
+        if existing:
+            paths.append(existing)
+        env['CPLUS_INCLUDE_PATH'] = os.pathsep.join(paths)
+        # Shared headers may change even when main.cpp has not changed.
+        force_compile = True
+
     try:
         _compile(code_filename, exec_filename,
-                 compile_command, cwd, force_compile)
+                 compile_command, cwd, force_compile, env=env)
     except BadStatusCodeException as e:
         raise e
 
@@ -69,6 +84,7 @@ def main(prog, args):
                                 get_default_config_path())),
                         default=None)
 
+    add_include_arguments(parser)
     args = parser.parse_args(args)
     if args.config is None:
         if os.path.exists(USER_CONFIG_PATH):
@@ -80,7 +96,8 @@ def main(prog, args):
     lang = metadata.lang
 
     with open(args.config, "r") as f:
-        config = Config.load(f, {ConfigType.COMPILER}, args, lang.name)
+        config = Config.load(
+            f, {ConfigType.COMPILER, ConfigType.EXPAND}, args, lang.name)
 
     if args.compile_only_when_diff_detected:
         force_compile = not args.compile_only_when_diff_detected
@@ -94,4 +111,5 @@ def main(prog, args):
     if compile_command:
         compile_command = lang.get_compile_command("main", compile_command)
     compile_main_and_judge_programs(metadata.lang, force_compile=force_compile,
-                                    compile_command=compile_command)
+                                    compile_command=compile_command,
+                                    include_dirs=config.expand_config.include_dirs)

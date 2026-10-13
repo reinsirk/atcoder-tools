@@ -11,10 +11,11 @@ def run_command(exec_cmd: str, current_working_dir: str) -> str:
     return proc.stdout.decode(locale.getpreferredencoding())
 
 
-def run_command_with_returncode(exec_cmd: str, current_working_dir: str):
+def run_command_with_returncode(exec_cmd: str, current_working_dir: str, env=None):
     proc = subprocess.run(exec_cmd,
                           shell=True,
                           stdout=subprocess.PIPE,
                           stderr=subprocess.STDOUT,
-                          cwd=current_working_dir)
+                          cwd=current_working_dir,
+                          env=env)
     return proc.returncode, proc.stdout.decode(locale.getpreferredencoding())

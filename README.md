@@ -83,6 +83,7 @@ https://kyuridenamida.github.io/atcoder-tools/
 - `atcoder-tools gen {contest_id}` コンテスト環境を用意します。
 - `atcoder-tools test` カレント・ディレクトリ上に実行ファイルと入出力(in_\*.txt, out_\*.txt)がある状態で実行するとローカルテストを行います。
 - `atcoder-tools submit` カレント・ディレクトリ上で実行すると対応する問題がサンプルに通る場合ソースコードを提出します。既にAtCoder上にその問題に対する提出がある場合、`-u`を指定しないと提出できないようになっています。
+- `atcoder-tools expand` C++ の独自ライブラリを展開したソースコードを保存します。C++ の `submit` は毎回、提出直前に展開し直します。
 - `atcoder-tools version` 現在の atcoder-tools のバージョンを出力します。
 
 `atcoder-tools gen --help`で`atcoder-tools gen`の引数の詳細について確認することができます。
@@ -192,6 +193,70 @@ optional arguments:
                         error value for decimal number judge: [Default] 1e-09
 ```
 
+### 独自 C++ ライブラリの展開
+
+`atcoder-tools expand` を問題ディレクトリで実行すると、`metadata.json` のソースを展開して、
+たとえば `main.cpp` から `main.expanded.cpp` を生成します。元のソースとヘッダーは保持します。
+`metadata.json` がない場合は `main.cpp` を使い、`--code` で別のソースを指定できます。
+
+独自ライブラリは次のルールで判別します。
+
+- `#include "..."` はローカルヘッダーとして、include を書いたファイルのディレクトリ、設定した `include_dirs` の順に探して再帰的に展開します。見つからなければエラーになります。
+- `#include <...>` は `include_dirs` 内に見つかる場合だけ展開します。それ以外はそのまま残すため、標準ライブラリやジャッジ環境の ACL を展開する必要はありません。
+- `include_dirs` は明示した順に検索します。コマンドラインの `-I` を指定した場合は設定ファイルのリストを置き換えます。
+
+```console
+atcoder-tools expand
+atcoder-tools expand --dir ./A --code main.cpp -I ~/competitive-library -o submission.cpp
+atcoder-tools submit --dir ./A -I ~/competitive-library
+```
+
+`expand` と `submit` の双方で次のオプションが使えます。
+
+- `--include-dir PATH`, `-I PATH`: ライブラリの検索先。複数回指定できます。
+- `--expanded-filename PATH`, `--output PATH`, `-o PATH`: 展開済みファイルの保存先。省略時はソース名に `.expanded` を挿入します。
+- `--code PATH`, `-c PATH`: 対象ソース。`--dir` からの相対パスまたは絶対パスです。
+- `--dir PATH`, `-d PATH`: 問題ディレクトリ。省略時はカレントディレクトリです。
+- `--config PATH`: 設定ファイル。省略時は `~/.atcodertools.toml`、なければ同梱の設定を使います。
+
+検索先と保存先の相対パスは `--dir` 基準です。絶対パスと `~` も使えます。
+共通ライブラリの検索先を `~/.atcodertools.toml` に設定すると、すべての問題フォルダで使えます。
+問題フォルダごとにヘッダーをコピーしたり、相対パスを調整したりする必要はありません。
+
+```toml
+[expand.cpp]
+include_dirs = ['~/competitive-library']
+# expanded_filename = 'submission.cpp' # 省略時: main.expanded.cpp など
+
+[tester.cpp]
+compile_before_testing = true
+```
+
+たとえば `~/competitive-library/my/math.hpp` を置いた場合、コンテストや問題を問わず次のように使えます。
+
+```cpp
+#include "my/math.hpp"
+```
+
+この検索先は `expand` と `submit` に加えて、`compile` と `test` による GCC/Clang での C++ コンパイルにも使います。
+`compile` と `test` でも `-I` による上書きが可能です。
+上記の設定なら、通常の `atcoder-tools test` と `atcoder-tools submit` だけで共通ライブラリを使えます。
+共有ヘッダーの変更を反映するため、検索先が設定されている C++ のコンパイルでは
+`compile_only_when_diff_detected` が有効でも毎回コンパイルします。
+自分で `g++` を実行する場合は `g++ main.cpp -o main -std=c++23 -I ~/competitive-library` のように検索先を指定してください。
+
+C++ の `submit` は常に提出直前に元のソースとヘッダーから展開済みファイルを生成し直し、その内容を提出します。
+展開に失敗すると、`--force` を指定していても提出しません。
+既存の `exec_before_submit` を併用した場合は、コマンドが生成した `submit_filename` を展開します。
+ローカルのサンプルテストと再提出防止の動作は従来どおりです。
+
+対応言語は C++ です。文字列で直接指定した include を対象とし、マクロを使った `#include HEADER` は残します。
+プリプロセッサの条件式は評価せずに保持するため、`#if` の無効な分岐にあるローカルヘッダーも必要です。
+通常の `#ifndef` / `#define` のヘッダーガードは保持し、`#pragma once` はファイルごとのガードに置き換えます。
+ガードのないヘッダーは include のたびに展開し、ガードのない循環 include はエラーになります。
+入力は UTF-8（BOM 付きも可）または CP932、出力は UTF-8 です。
+保存先が元のソースや展開対象のヘッダーと同じ場合はエラーになります。
+
 ### codegen の詳細
 
 ```
@@ -222,7 +287,7 @@ optional arguments:
 
 ## 設定ファイルの例
 `~/.atcodertools.toml`に以下の設定を保存すると、コードスタイルや、コード生成後に実行するコマンドを指定できます。
-設定ファイルはcodestyle, postprocess, tester, submit, etcのテーブルに分かれていて、codestyle.nimというようにテーブル名の後に.[言語名]で指定するとその言語のみに適用されます。
+設定ファイルはcodestyle, postprocess, tester, submit, expand, etcのテーブルに分かれていて、codestyle.nimというようにテーブル名の後に.[言語名]で指定するとその言語のみに適用されます。
 
 以下は、次の挙動を期待する場合の`~/.atcodertools.toml`の例です。
 

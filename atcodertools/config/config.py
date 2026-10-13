@@ -12,6 +12,7 @@ from atcodertools.config.etc_config import EtcConfig
 from atcodertools.config.postprocess_config import PostprocessConfig
 from atcodertools.config.tester_config import TesterConfig
 from atcodertools.config.submit_config import SubmitConfig
+from atcodertools.config.expand_config import ExpandConfig
 
 
 USER_CONFIG_PATH = os.path.join(expanduser("~"), ".atcodertools.toml")
@@ -22,6 +23,7 @@ class ConfigType(Enum):
     POSTPROCESS = "postprocess"
     TESTER = "tester"
     SUBMIT = "submit"
+    EXPAND = "expand"
     ETC = "etc"
     COMPILER = "compiler"
 
@@ -62,12 +64,14 @@ class Config:
                  tester_config: TesterConfig = TesterConfig(),
                  submit_config: SubmitConfig = SubmitConfig(),
                  etc_config: EtcConfig = EtcConfig(),
+                 expand_config: ExpandConfig = ExpandConfig(),
                  ):
         self.code_style_config = code_style_config
         self.postprocess_config = postprocess_config
         self.tester_config = tester_config
         self.submit_config = submit_config
         self.etc_config = etc_config
+        self.expand_config = expand_config
 
     @classmethod
     def load(cls, fp: TextIO, get_config_type: Set[ConfigType], args: Optional[Namespace] = None, lang=None):
@@ -118,6 +122,15 @@ class Config:
                                                              exec_after_submit=args.exec_after_submit,
                                                              submit_filename=args.submit_filename))
             result.submit_config = SubmitConfig(**submit_config_dic)
+        if ConfigType.EXPAND in get_config_type:
+            expand_config_dic = get_config_dic(
+                config_dic, ConfigType.EXPAND, lang)
+            if args:
+                expand_config_dic = _update_config_dict(
+                    expand_config_dic,
+                    dict(include_dirs=getattr(args, 'include_dirs', None),
+                         expanded_filename=getattr(args, 'expanded_filename', None)))
+            result.expand_config = ExpandConfig(**expand_config_dic)
         if ConfigType.ETC in get_config_type:
             etc_config_dic = get_config_dic(config_dic, ConfigType.ETC)
             if args:
