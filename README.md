@@ -149,7 +149,7 @@ usage: atcoder-tools test [-h] [--exec EXEC] [--num NUM]
                                          [--judge-type JUDGE_TYPE]
                                          [--error-value ERROR_VALUE]
                                          [--random-test] [--iterations ITERATIONS]
-                                         [--random-test-mode {auto,normal,judge,interactive}]
+                                         [--random-test-mode {normal,judge,interactive}]
                                          [--judge-exec JUDGE_EXEC | --interactor-exec INTERACTOR_EXEC]
 
 optional arguments:
@@ -169,8 +169,8 @@ optional arguments:
   --random-test         Run random tests using main, naive and generator
   --iterations ITERATIONS
                         Number of random tests (0: until failure or Ctrl+C; default: 1000)
-  --random-test-mode {auto,normal,judge,interactive}
-                        Override the random-test judging mode configured in TOML
+  --random-test-mode {normal,judge,interactive}
+                        Select the random-test judging mode [Default] normal
   --judge-exec JUDGE_EXEC
                         Output validator command for sample or random tests (exit 0: accepted)
   --interactor-exec INTERACTOR_EXEC
@@ -205,6 +205,7 @@ atcoder-tools test --random-test --iterations 0
 開始時に3つのプログラムをコンパイルし、入力生成・愚直解・提出用プログラムの順に実行します。`--iterations`はTOMLの`iterations`より優先され、`0`を指定すると不一致またはCtrl+Cまで繰り返します。
 最初の不一致、実行エラー、タイムアウト、generatorの空出力で停止し、入力・各プログラムの出力・標準エラー・実行結果を`random-test-failures/case-番号-識別子/`に保存します。
 通常の判定では出力の完全一致を確認します。小数の許容誤差は通常の`test`と同様にメタデータ、`--judge-type`、`--error-value`で指定できます。`--timeout`は各プログラムの実行時間制限です。
+判定方式は実行時の`--random-test-mode normal|judge|interactive`で選び、省略時は常に`normal`になります。
 
 `generator_filename`でファイル名と拡張子を指定できます。例えば`generator.cpp`や`generate.py`を指定すると、拡張子に対応する言語でコンパイル・実行します。
 generatorが提出用プログラムと異なる言語の場合は、その言語の標準テンプレートを使います。カスタムテンプレートは`[codestyle.python]`などの言語別テーブルで指定できます。
@@ -221,7 +222,7 @@ compile_command = "g++ {filename}.cpp -o {filename} -std=c++23 -O2"
 
 #### 解が複数ある問題・条件を満たす出力を作る問題
 
-通常の出力比較と、検証プログラムを使った判定を選べます。次の設定で`gen`時に`judge.cpp`の雛形も用意します。
+検証プログラムを使う問題では`--random-test-mode judge`を指定します。判定用ソースの指定を省略すると、提出用プログラムと同じ言語の`judge.cpp`などを使います。次の設定で`gen`時に`judge.cpp`の雛形も用意します。
 検証プログラムには、出力が問題の条件を満たすか確認する処理を実装してください。最適化問題では、愚直解の出力から最適値も確認します。
 
 ```toml
@@ -229,21 +230,18 @@ compile_command = "g++ {filename}.cpp -o {filename} -std=c++23 -O2"
 enabled = true
 generator_filename = "generate.cpp"
 judge_filename = "judge.cpp"
-mode = "judge"
 ```
 
 検証プログラムは3つのファイルパスを引数として受け取ります。C++では`int main(int argc, char* argv[])`に変更し、`argv[1]`から入力、`argv[2]`から愚直解の出力、`argv[3]`から提出用プログラムの出力を読みます。
 正しい出力なら終了コード`0`、誤った出力や検証失敗なら非ゼロで終了してください。判定理由は標準エラーに書くと失敗時に保存されます。
 
 ```console
-# TOMLで指定したjudge.cppをコンパイルして検証する
-atcoder-tools test --random-test
+# judge.cppをコンパイルして検証する
+atcoder-tools test --random-test --random-test-mode judge
 # 同じ設定のまま、通常の出力比較に切り替える
 atcoder-tools test --random-test --random-test-mode normal
-# 検証プログラムによる判定に切り替える
-atcoder-tools test --random-test --random-test-mode judge
 # コンパイル済みの検証プログラムを直接指定する
-atcoder-tools test --random-test --judge-exec ./judge
+atcoder-tools test --random-test --random-test-mode judge --judge-exec ./judge
 ```
 
 通常のサンプルテストでも、同じ引数形式の検証プログラムを使えます。`argv[2]`にはサンプルの出力例を渡します。
@@ -257,7 +255,8 @@ atcoder-tools test
 
 #### インタラクティブ問題
 
-対話用プログラムを指定すると、愚直解との比較の代わりに、提出用プログラムと対話用プログラムを接続して実行します。
+`--random-test-mode interactive`を指定すると、愚直解との比較の代わりに、提出用プログラムと対話用プログラムを接続して実行します。
+対話用ソースの指定を省略すると、提出用プログラムと同じ言語の`interactor.cpp`などを使います。
 このモードでは`naive.cpp`の実装・コンパイルは不要です。`gen`では、次の設定で`interactor.cpp`の雛形も生成します。
 
 ```toml
@@ -265,7 +264,6 @@ atcoder-tools test
 enabled = true
 generator_filename = "generate.cpp"
 interactor_filename = "interactor.cpp"
-mode = "interactive"
 ```
 
 generatorは秘密のデータを標準出力に書きます。対話用プログラムはC++の`argv[1]`に渡されるファイルからそのデータを読み、解答プログラムに渡す初期入力や問い合わせへの応答を標準出力に書きます。
@@ -273,17 +271,17 @@ generatorは秘密のデータを標準出力に書きます。対話用プロ�
 両方のプログラムで、相手が読む前に出力をflushしてください。判定には両方のプログラムの正常終了が必要です。`--timeout`は対話全体の時間制限です。
 
 ```console
-atcoder-tools test --random-test
-atcoder-tools test --random-test --interactor-exec ./interactor
+atcoder-tools test --random-test --random-test-mode interactive
+atcoder-tools test --random-test --random-test-mode interactive --interactor-exec ./interactor
 ```
 
 失敗時には秘密の入力、解答側と対話側それぞれの送信内容、標準エラー、実行結果を保存します。
-`judge_filename`と`interactor_filename`は同時に指定できません。`mode = "auto"`が既定値で、指定された補助ファイルに応じて判定方式を選び、どちらもなければ通常の出力比較を行います。
-実行時の`--random-test-mode`でTOMLの方式を上書きできます。
+`--random-test-mode`で`normal`・`judge`・`interactive`を選びます。省略時は常に`normal`です。TOMLでは判定方式を指定せず、旧設定に`mode`が残っていても無視します。
+`judge_filename`と`interactor_filename`は両方指定できますが、実行時には選んだ方式の補助プログラムだけを使います。
 
 ランダムテスト用の生成を有効にした場合、HTMLの日本語・英語に明記されたインタラクティブ形式や「答えが複数ある場合はどれを出力してもよい」といった文言を検出し、`metadata.json`に記録します。
-複数の正解があると検出しても判定方式は固定せず、通常の比較を選べます。インタラクティブ形式を検出した場合は対話用プログラムの指定を案内します。
-HTMLの判別は限られた表現に対応するため、検出できなかった問題でもTOMLや引数で方式を指定してください。検証・対話のロジックは利用者が実装します。
+HTMLの判別結果は参考情報として保存し、実行時の判定方式は変更しません。問題に応じて`--random-test-mode`で方式を選んでください。
+HTMLの判別は限られた表現に対応しています。検証・対話のロジックは利用者が実装します。
 
 
 ### submit の詳細

@@ -70,38 +70,32 @@ def _save_failure(cwd, input_path, results, case_number):
 
 
 def run_random_tests(metadata, config, cwd, timeout, judge_method, main_command=None,
-                     judge_command=None, interactor_command=None):
+                     judge_command=None, interactor_command=None, mode="normal"):
     """Compile each program once, then stop at the first discrepancy or execution failure."""
     cwd = os.path.abspath(cwd)
     random_config = config.random_test_config
     generator_lang = random_config.generator_language
     generator_name = Path(random_config.generator_filename).stem
-    judge_source = random_config.judge_filename
-    interactor_source = random_config.interactor_filename
-    mode = random_config.mode
+    judge_source = None
+    interactor_source = None
     if mode == "normal":
-        judge_source = interactor_source = judge_command = interactor_command = None
+        if judge_command or interactor_command:
+            logger.error("Normal mode cannot use a judge or interactor command; select --random-test-mode")
+            return False
     elif mode == "judge":
-        interactor_source = interactor_command = None
-        if not (judge_source or judge_command):
-            logger.error("Judge mode requires judge_filename or --judge-exec")
+        if interactor_command:
+            logger.error("Judge mode cannot use an interactor command")
             return False
+        judge_source = random_config.judge_filename or metadata.lang.get_code_filename("judge")
     elif mode == "interactive":
-        judge_source = judge_command = None
-        if not (interactor_source or interactor_command):
-            logger.error("Interactive mode requires interactor_filename or --interactor-exec")
+        if judge_command:
+            logger.error("Interactive mode cannot use a judge command")
             return False
-    if mode == "auto" and not any((judge_source, interactor_source, judge_command, interactor_command)):
-        if metadata.problem_type == "interactive":
-            logger.error("Interactive problem detected: configure interactor_filename or --interactor-exec")
-            return False
-        if metadata.problem_type == "output_validation":
-            logger.info("Multiple valid outputs detected; normal comparison selected. "
-                        "Use judge_filename or --judge-exec to validate alternative outputs.")
-    interactive = interactor_command is not None or interactor_source is not None
-    if (judge_command or judge_source) and interactive:
-        logger.error("Choose either an output judge or an interactor")
+        interactor_source = random_config.interactor_filename or metadata.lang.get_code_filename("interactor")
+    else:
+        logger.error("Random-test mode must be normal, judge or interactive")
         return False
+    interactive = mode == "interactive"
     programs = [(generator_name, generator_lang)]
     if not interactive:
         programs.insert(0, ("naive", metadata.lang))
@@ -113,8 +107,8 @@ def run_random_tests(metadata, config, cwd, timeout, judge_method, main_command=
         programs.insert(0, ("main", metadata.lang))
     for name, lang in programs:
         if not (Path(cwd) / lang.get_code_filename(name)).is_file():
-            logger.error("Missing source: {}. Enable [random_test] enabled = true and run gen, "
-                         "or create the file yourself.".format(lang.get_code_filename(name)))
+            logger.error("Missing source: {}. Create this file, or configure its filename and enable "
+                         "[random_test] before running gen.".format(lang.get_code_filename(name)))
             return False
     try:
         for name, lang in programs:

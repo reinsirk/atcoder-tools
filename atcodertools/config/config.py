@@ -92,10 +92,11 @@ class Config:
 
         if ConfigType.RANDOM_TEST in get_config_type:
             random_test_dic = get_config_dic(config_dic, ConfigType.RANDOM_TEST, lang)
+            # Older configurations may contain mode; only the CLI selects the judging mode.
+            random_test_dic.pop("mode", None)
             if args:
                 random_test_dic = _update_config_dict(
-                    random_test_dic, dict(iterations=getattr(args, "iterations", None),
-                                          mode=getattr(args, "random_test_mode", None)))
+                    random_test_dic, dict(iterations=getattr(args, "iterations", None)))
             result.random_test_config = RandomTestConfig(**random_test_dic)
 
         if ConfigType.CODESTYLE in get_config_type:

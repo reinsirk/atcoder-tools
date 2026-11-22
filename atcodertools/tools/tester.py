@@ -320,8 +320,8 @@ def main(prog, args) -> bool:
                         help="Compare main and naive on inputs produced by the generator")
     parser.add_argument("--iterations", type=int, default=None,
                         help="Number of random tests (0: until failure or Ctrl+C; default: 1000)")
-    parser.add_argument("--random-test-mode", choices=("auto", "normal", "judge", "interactive"), default=None,
-                        help="Override the random-test judging mode configured in TOML")
+    parser.add_argument("--random-test-mode", choices=("normal", "judge", "interactive"), default="normal",
+                        help="Random-test judging mode [Default] normal")
     special_judge = parser.add_mutually_exclusive_group()
     special_judge.add_argument("--judge-exec", default=None,
                                help="Output validator command for sample or random tests (exit 0: accepted)")
@@ -391,9 +391,9 @@ def main(prog, args) -> bool:
         parser.error("--num cannot be combined with --random-test; use --iterations")
     if args.iterations is not None and (not args.random_test or args.iterations < 0):
         parser.error("--iterations requires --random-test and a non-negative integer")
-    if (args.interactor_exec or args.random_test_mode) and not args.random_test:
+    if (args.interactor_exec or args.random_test_mode != "normal") and not args.random_test:
         parser.error("--interactor-exec and --random-test-mode require --random-test")
-    if args.random_test_mode == "normal" and (args.judge_exec or args.interactor_exec):
+    if args.random_test and args.random_test_mode == "normal" and (args.judge_exec or args.interactor_exec):
         parser.error("Normal mode cannot be combined with --judge-exec or --interactor-exec")
     if args.random_test_mode == "judge" and args.interactor_exec:
         parser.error("Judge mode cannot be combined with --interactor-exec")
@@ -415,11 +415,6 @@ def main(prog, args) -> bool:
 
     with open(args.config, "r") as f:
         config = Config.load(f, {ConfigType.TESTER, ConfigType.RANDOM_TEST}, args, lang.name)
-    if args.random_test_mode is None:
-        if args.judge_exec:
-            config.random_test_config.mode = "judge"
-        elif args.interactor_exec:
-            config.random_test_config.mode = "interactive"
 
     if args.timeout is None:
         if metadata.timeout_ms is None:
@@ -445,7 +440,7 @@ def main(prog, args) -> bool:
         if args.timeout <= 0:
             parser.error("--timeout must be positive")
         return run_random_tests(metadata, config, args.dir, args.timeout, judge_method, args.exec,
-                                args.judge_exec, args.interactor_exec)
+                                args.judge_exec, args.interactor_exec, mode=args.random_test_mode)
 
     if args.exec is not None:
         exec_file = args.exec

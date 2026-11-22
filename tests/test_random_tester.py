@@ -40,10 +40,10 @@ class TestRandomTester(unittest.TestCase):
         (self.root / "naive.py").write_text(naive or main)
         (self.root / "generate.py").write_text(generator)
 
-    def run_tests(self, judge=None, main_command=None):
+    def run_tests(self, judge=None, main_command=None, mode="normal"):
         with redirect_stdout(io.StringIO()) as output:
             passed = run_random_tests(self.metadata, self.config, str(self.root), 0.3,
-                                      judge or NormalJudge(), main_command)
+                                      judge or NormalJudge(), main_command, mode=mode)
         return passed, output.getvalue()
 
     def failure(self):
@@ -135,9 +135,45 @@ class TestRandomTester(unittest.TestCase):
                                              "--config", str(config_path), "--iterations", "2"]))
         self.assertIn("Passed all 2 random test cases!", output.getvalue())
 
+    def test_cli_default_is_normal_regardless_of_toml_and_html(self):
+        config_path = self.root / "config.toml"
+        args = ["--random-test", "--dir", str(self.root), "--config", str(config_path)]
+        for old_mode, problem_type in (("judge", "output_validation"), ("interactive", "interactive")):
+            with self.subTest(old_mode=old_mode):
+                self.metadata.problem_type = problem_type
+                self.metadata.save_to(str(self.root / "metadata.json"))
+                config_path.write_text('[random_test]\ngenerator_filename="generate.py"\niterations=1\n'
+                                       'judge_filename="missing_judge.py"\ninteractor_filename="missing_interactor.py"\n'
+                                       'mode="' + old_mode + '"\n')
+                with redirect_stdout(io.StringIO()):
+                    self.assertTrue(tester.main("", args))
+                    self.assertTrue(tester.main("", args + ["--random-test-mode", "normal"]))
+
+    def test_cli_selects_special_modes_without_toml_settings(self):
+        config_path = self.root / "config.toml"
+        config_path.write_text('[random_test]\ngenerator_filename="generate.py"\niterations=1\n')
+        args = ["--random-test", "--dir", str(self.root), "--config", str(config_path)]
+        self.write_python(main="print(15)", naive="print(14)")
+        (self.root / "judge.py").write_text(
+            "import pathlib, sys\nassert int(pathlib.Path(sys.argv[3]).read_text()) == 15\n")
+        self.metadata.save_to(str(self.root / "metadata.json"))
+        with redirect_stdout(io.StringIO()):
+            self.assertFalse(tester.main("", args))
+            self.assertTrue(tester.main("", args + ["--random-test-mode", "judge"]))
+            self.assertTrue(tester.main("", args + ["--random-test-mode", "judge", "--judge-exec", "python3 judge.py"]))
+        self.write_interactive()
+        self.metadata.save_to(str(self.root / "metadata.json"))
+        with redirect_stdout(io.StringIO()):
+            self.assertTrue(tester.main("", args + ["--random-test-mode", "interactive"]))
+            self.assertTrue(tester.main("", args + ["--random-test-mode", "interactive",
+                                                   "--interactor-exec", "python3 interactor.py"]))
+
     def test_invalid_cli_options(self):
         for args in (["--random-test", "--num", "1"], ["--iterations", "2"],
-                     ["--random-test", "--iterations", "-1"]):
+                     ["--random-test", "--iterations", "-1"],
+                     ["--random-test", "--random-test-mode", "auto"],
+                     ["--random-test", "--judge-exec", "./judge"],
+                     ["--random-test", "--interactor-exec", "./interactor"]):
             with self.subTest(args=args), self.assertRaises(SystemExit):
                 tester.main("", args)
 
@@ -150,19 +186,18 @@ class TestRandomTester(unittest.TestCase):
             "n, expected, actual = [int(pathlib.Path(p).read_text()) for p in sys.argv[1:]]\n"
             "sys.exit(0 if actual in (n*2, n*2+1) and expected == n*2 else 1)\n")
         self.metadata.problem_type = "output_validation"
-        self.assertTrue(self.run_tests()[0])
-        self.config.random_test_config.mode = "normal"
+        self.assertTrue(self.run_tests(mode="judge")[0])
         self.assertFalse(self.run_tests()[0])
 
     def test_judge_rejection_and_timeout(self):
         self.config.random_test_config.judge_filename = "checker.py"
         (self.root / "checker.py").write_text("import sys; print('invalid'); sys.exit(1)")
-        passed, output = self.run_tests()
+        passed, output = self.run_tests(mode="judge")
         self.assertFalse(passed)
         self.assertIn("judge rejected", output)
         self.assertEqual((self.failure() / "judge.txt").read_text(), "invalid\n")
         (self.root / "checker.py").write_text("import time; time.sleep(2)")
-        self.assertFalse(self.run_tests()[0])
+        self.assertFalse(self.run_tests(mode="judge")[0])
 
     def test_non_unique_output_detection_allows_normal_comparison(self):
         self.metadata.problem_type = "output_validation"
@@ -182,12 +217,12 @@ class TestRandomTester(unittest.TestCase):
 
     def test_interactive_dialogue_without_naive(self):
         self.write_interactive()
-        self.assertTrue(self.run_tests()[0])
+        self.assertTrue(self.run_tests(mode="interactive")[0])
 
     def test_interactive_failure_saves_transcript(self):
         self.write_interactive()
         (self.root / "main.py").write_text("input(); print('! 999', flush=True)")
-        self.assertFalse(self.run_tests()[0])
+        self.assertFalse(self.run_tests(mode="interactive")[0])
         failure = self.failure()
         self.assertIn("! 999", (failure / "main.txt").read_text())
         self.assertEqual((failure / "interactor.txt").read_text(), "100\n")
@@ -196,16 +231,16 @@ class TestRandomTester(unittest.TestCase):
     def test_interactive_timeout(self):
         self.write_interactive()
         (self.root / "main.py").write_text("import time; time.sleep(2)")
-        self.assertFalse(self.run_tests()[0])
+        self.assertFalse(self.run_tests(mode="interactive")[0])
         self.assertIn("TLE", (self.failure() / "status.txt").read_text())
 
     def test_interactive_launch_failure_and_missing_interactor(self):
         self.metadata.problem_type = "interactive"
-        self.assertFalse(self.run_tests()[0])
+        self.assertFalse(self.run_tests(mode="interactive")[0])
         self.config.random_test_config.interactor_filename = "interactor.py"
         (self.root / "interactor.py").write_text("pass")
         with patch("atcodertools.tools.random_tester.run_interactive", side_effect=FileNotFoundError):
-            self.assertFalse(self.run_tests()[0])
+            self.assertFalse(self.run_tests(mode="interactive")[0])
 
     def test_interactive_launch_failure_cleans_up_solver(self):
         launched = []
@@ -225,10 +260,9 @@ class TestRandomTester(unittest.TestCase):
             self.assertTrue(stream.closed)
 
     def test_special_mode_validation(self):
-        for mode in ("judge", "interactive"):
+        for mode in ("judge", "interactive", "invalid"):
             with self.subTest(mode=mode):
-                self.config.random_test_config.mode = mode
-                self.assertFalse(self.run_tests()[0])
+                self.assertFalse(self.run_tests(mode=mode)[0])
 
     def test_sample_custom_judge(self):
         (self.root / "in_1.txt").write_text("7\n")
@@ -292,7 +326,7 @@ class TestRandomTester(unittest.TestCase):
             'return argc==4 && e==n && a==n+1 ? 0:1;}')
         self.metadata.lang = CPP
         self.config.random_test_config = RandomTestConfig(iterations=2, judge_filename="checker.cpp")
-        self.assertTrue(self.run_tests()[0])
+        self.assertTrue(self.run_tests(mode="judge")[0])
         (self.root / "main.cpp").write_text(
             '#include <iostream>\nint main(){int n; std::cin>>n; std::cout<<n*2<<std::endl;}')
         (self.root / "interactor.cpp").write_text(
@@ -301,7 +335,7 @@ class TestRandomTester(unittest.TestCase):
             'if(!(std::cin>>a))return 1; return a==n*2?0:1;}')
         (self.root / "naive.cpp").unlink()
         self.config.random_test_config = RandomTestConfig(iterations=2, interactor_filename="interactor.cpp")
-        self.assertTrue(self.run_tests()[0])
+        self.assertTrue(self.run_tests(mode="interactive")[0])
 
 
 class TestRandomTestGeneration(unittest.TestCase):
@@ -314,11 +348,21 @@ class TestRandomTestGeneration(unittest.TestCase):
                 RandomTestConfig(**values)
 
     def test_special_config_validation(self):
-        for values in ({"mode": "invalid"}, {"judge_filename": "main.cpp"},
+        for values in ({"judge_filename": "main.cpp"},
                        {"interactor_filename": "../interactor.cpp"},
-                       {"judge_filename": "judge.cpp", "interactor_filename": "interactor.cpp"}):
+                       {"judge_filename": "helper.py", "interactor_filename": "helper.cpp"}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 RandomTestConfig(**values)
+
+    def test_toml_does_not_store_judging_mode_and_can_generate_both_helpers(self):
+        config = Config.load(io.StringIO('[random_test]\nenabled=true\nmode="interactive"\n'
+                                        'judge_filename="judge.cpp"\ninteractor_filename="interactor.cpp"\n'),
+                             {ConfigType.RANDOM_TEST})
+        self.assertFalse(hasattr(config.random_test_config, "mode"))
+        with tempfile.TemporaryDirectory() as directory:
+            prepare_random_test_files(directory, "solution", ProblemConstantSet(), config)
+            self.assertTrue((Path(directory) / "judge.cpp").exists())
+            self.assertTrue((Path(directory) / "interactor.cpp").exists())
 
     def test_html_detection_and_old_metadata_compatibility(self):
         for html, expected in (
