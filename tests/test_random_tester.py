@@ -296,6 +296,21 @@ class TestRandomTester(unittest.TestCase):
                                                  "--judge-exec", "./checker.py"]))
         self.assertEqual(run.call_args.args[0], str(self.root / "main.py"))
 
+    def test_sample_inference_skips_all_default_random_test_helpers(self):
+        for name in ("main.py", "judge.py", "interactor.py", "naive.py", "generate.py"):
+            (self.root / name).write_text("#!/usr/bin/python3\nprint(14)\n")
+            (self.root / name).chmod(0o755)
+        self.metadata.save_to(str(self.root / "metadata.json"))
+        (self.root / "in_1.txt").write_text("7\n")
+        (self.root / "out_1.txt").write_text("14\n")
+        config_path = self.root / "config.toml"
+        config_path.write_text('[random_test]\ngenerator_filename="generate.py"\n')
+        with patch("atcodertools.tools.tester.run_program", return_value=ExecResult(ExecStatus.NORMAL, "14\n", "", 0)) as run:
+            with redirect_stdout(io.StringIO()):
+                self.assertTrue(tester.main("", ["--dir", str(self.root), "--config", str(config_path)]))
+        self.assertEqual(run.call_args.args[0], str(self.root / "main.py"))
+        self.assertEqual(run.call_count, 1)
+
     @unittest.skipUnless(shutil.which("g++"), "g++ is required")
     def test_real_cpp_compilation_and_random_inputs(self):
         # Alternate inputs using a counter so agreement is checked on multiple values.
@@ -343,13 +358,16 @@ class TestRandomTestGeneration(unittest.TestCase):
         self.assertFalse(Config().random_test_config.enabled)
         for values in ({"iterations": -1}, {"iterations": True}, {"enabled": "true"},
                        {"generator_filename": "../generate.cpp"}, {"generator_filename": "main.cpp"},
-                       {"generator_filename": "naive.cpp"}, {"generator_filename": "generate.xyz"}):
+                       {"generator_filename": "naive.cpp"}, {"generator_filename": "generate.xyz"},
+                       {"generator_filename": "interactor.cpp"}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 RandomTestConfig(**values)
 
     def test_special_config_validation(self):
         for values in ({"judge_filename": "main.cpp"},
                        {"interactor_filename": "../interactor.cpp"},
+                       {"judge_filename": "interactor.py"}, {"interactor_filename": "judge.py"},
+                       {"judge_filename": ""}, {"interactor_filename": ""},
                        {"judge_filename": "helper.py", "interactor_filename": "helper.cpp"}):
             with self.subTest(values=values), self.assertRaises(ValueError):
                 RandomTestConfig(**values)
@@ -395,10 +413,11 @@ class TestRandomTestGeneration(unittest.TestCase):
             expected = config.code_style_config.code_generator(
                 CodeGenArgs(template.read_text(), None, constants, config.code_style_config))
             self.assertEqual((root / "generate.cpp").read_text(), expected)
-            for name in ("naive.cpp", "generate.cpp"):
+            for name in ("naive.cpp", "generate.cpp", "judge.cpp", "interactor.cpp"):
+                self.assertTrue((root / name).exists())
                 (root / name).write_text("user code")
             prepare_random_test_files(directory, "new main", constants, config)
-            for name in ("naive.cpp", "generate.cpp"):
+            for name in ("naive.cpp", "generate.cpp", "judge.cpp", "interactor.cpp"):
                 self.assertEqual((root / name).read_text(), "user code")
 
     def test_language_specific_config(self):
@@ -413,20 +432,40 @@ class TestRandomTestGeneration(unittest.TestCase):
             prepare_random_test_files(directory, "solution", ProblemConstantSet(), config)
             self.assertTrue((Path(directory) / "naive.cpp").exists())
             self.assertTrue((Path(directory) / "generator.py").exists())
+            self.assertTrue((Path(directory) / "judge.cpp").exists())
+            self.assertTrue((Path(directory) / "interactor.cpp").exists())
+
+    def test_default_helpers_use_the_solution_language(self):
+        config = Config(code_style_config=CodeStyleConfig(lang="python"),
+                        random_test_config=RandomTestConfig(enabled=True, generator_filename="generate.py"))
+        with tempfile.TemporaryDirectory() as directory:
+            prepare_random_test_files(directory, "solution", ProblemConstantSet(), config)
+            self.assertEqual({p.name for p in Path(directory).iterdir()},
+                             {"naive.py", "generate.py", "judge.py", "interactor.py"})
+
+    def test_custom_judge_and_interactor_filenames_replace_the_defaults(self):
+        config = Config(random_test_config=RandomTestConfig(enabled=True, judge_filename="checker.cpp",
+                                                           interactor_filename="interaction.cpp"))
+        with tempfile.TemporaryDirectory() as directory:
+            prepare_random_test_files(directory, "solution", ProblemConstantSet(), config)
+            self.assertEqual({p.name for p in Path(directory).iterdir()},
+                             {"naive.cpp", "generate.cpp", "checker.cpp", "interaction.cpp"})
 
     def test_gen_creates_helpers_when_enabled(self):
         from atcodertools.fmtprediction.models.format_prediction_result import FormatPredictionResult
-        with tempfile.TemporaryDirectory() as directory:
-            config = Config(code_style_config=CodeStyleConfig(workspace_dir=directory),
-                            random_test_config=RandomTestConfig(enabled=True))
-            problem = Problem(Contest("abc001"), "A", "abc001_1")
-            content = Mock(original_html="")
-            content.get_samples.return_value = []
-            client = Mock()
-            client.download_problem_content.return_value = content
-            with patch("atcodertools.tools.envgen.predict_format", return_value=FormatPredictionResult.empty_result()):
-                envgen.prepare_procedure(client, problem, config)
-            root = Path(directory) / "abc001" / "A"
-            self.assertEqual((root / "main.cpp").read_text(), (root / "naive.cpp").read_text())
-            self.assertTrue((root / "generate.cpp").exists())
-            self.assertTrue((root / "metadata.json").exists())
+        for problem_type in ("batch", "output_validation", "interactive"):
+            with self.subTest(problem_type=problem_type), tempfile.TemporaryDirectory() as directory:
+                config = Config(code_style_config=CodeStyleConfig(workspace_dir=directory),
+                                random_test_config=RandomTestConfig(enabled=True))
+                problem = Problem(Contest("abc001"), "A", "abc001_1")
+                content = Mock(original_html="")
+                content.get_samples.return_value = []
+                client = Mock()
+                client.download_problem_content.return_value = content
+                with patch("atcodertools.tools.envgen.predict_format", return_value=FormatPredictionResult.empty_result()), \
+                        patch("atcodertools.tools.envgen.predict_problem_type", return_value=problem_type):
+                    envgen.prepare_procedure(client, problem, config)
+                root = Path(directory) / "abc001" / "A"
+                self.assertEqual((root / "main.cpp").read_text(), (root / "naive.cpp").read_text())
+                self.assertEqual({p.name for p in root.iterdir()},
+                                 {"main.cpp", "naive.cpp", "generate.cpp", "judge.cpp", "interactor.cpp", "metadata.json"})

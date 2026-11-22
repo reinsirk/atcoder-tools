@@ -11,19 +11,19 @@ class RandomTestConfig:
             raise ValueError("enabled must be true or false")
         self.enabled = enabled
         self.generator_language = source_language(generator_filename)
-        if Path(generator_filename).stem in ("main", "naive", "judge"):
-            raise ValueError("generator_filename must differ from main, naive and judge")
+        if Path(generator_filename).stem in ("main", "naive", "judge", "interactor"):
+            raise ValueError("generator_filename must differ from main, naive, judge and interactor")
         if type(iterations) is not int or iterations < 0:
             raise ValueError("iterations must be a non-negative integer (0 means unlimited)")
         self.generator_filename = generator_filename
         self.iterations = iterations
         names = {"main", "naive", Path(generator_filename).stem}
-        for filename in (judge_filename, interactor_filename):
-            if filename is not None:
-                source_language(filename)
-                if Path(filename).stem in names:
-                    raise ValueError("Random-test program filenames must have different stems")
-                names.add(Path(filename).stem)
+        for filename in (judge_filename if judge_filename is not None else "judge.cpp",
+                         interactor_filename if interactor_filename is not None else "interactor.cpp"):
+            source_language(filename)
+            if Path(filename).stem in names:
+                raise ValueError("Random-test program filenames must have different stems")
+            names.add(Path(filename).stem)
         self.judge_filename = judge_filename
         self.interactor_filename = interactor_filename
 

@@ -474,10 +474,10 @@ def main(prog, args) -> bool:
             os.path.join(args.dir, config.random_test_config.generator_language.get_exec_filename(
                 Path(config.random_test_config.generator_filename).stem))
         ]
-        for filename in (config.random_test_config.judge_filename, config.random_test_config.interactor_filename):
-            if filename:
-                excluded_exec_files.extend([os.path.join(args.dir, filename), os.path.join(
-                    args.dir, source_language(filename).get_exec_filename(Path(filename).stem))])
+        for filename in (config.random_test_config.judge_filename or lang.get_code_filename("judge"),
+                         config.random_test_config.interactor_filename or lang.get_code_filename("interactor")):
+            excluded_exec_files.extend([os.path.join(args.dir, filename), os.path.join(
+                args.dir, source_language(filename).get_exec_filename(Path(filename).stem))])
         if args.judge_exec:
             excluded_exec_files.extend(os.path.join(args.dir, token) for token in args.judge_exec.split(" "))
         exec_file = infer_exec_file(

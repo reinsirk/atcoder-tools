@@ -180,7 +180,7 @@ optional arguments:
 ### ランダムテスト
 
 [AtCoderの解説記事の方法1](https://info.atcoder.jp/entry/algorithm_lectures/randomtest)と同じように、提出用プログラム、入力を生成するgenerator、愚直解を別々のファイルに書いて比較できます。
-`~/.atcodertools.toml`に次の設定を追加すると、通常の`gen`で`main.cpp`に加えて`naive.cpp`と`generate.cpp`を生成します。追加の引数は不要です。
+`~/.atcodertools.toml`に次の設定を追加すると、通常の`gen`で`main.cpp`に加えて`naive.cpp`・`generate.cpp`・`judge.cpp`・`interactor.cpp`を生成します。問題形式に関係なく、4つの補助ファイルをすべて用意します。追加の引数は不要です。
 
 ```toml
 [random_test]
@@ -191,7 +191,7 @@ iterations = 1000
 
 `naive.cpp`は`main.cpp`と同じテンプレート・入力処理を使います。`generate.cpp`も同じテンプレートを使いますが、標準入力を読む処理は生成しません。
 愚直解には単純な解法を、generatorには問題の制約を満たす小さなランダム入力を標準出力へ書く処理を実装してください。generatorは各ケースにつき1回起動されるため、乱数の種には`std::random_device`などを使ってください。
-`gen`を再実行しても、既存の`naive.cpp`と`generate.cpp`は上書きしません。`enabled`の既定値は`false`です。
+`gen`を再実行しても、既存の補助ファイルは上書きしません。使う方式に必要なファイルを実装してください。`enabled`の既定値は`false`です。
 
 ```console
 atcoder-tools gen abc001
@@ -222,7 +222,7 @@ compile_command = "g++ {filename}.cpp -o {filename} -std=c++23 -O2"
 
 #### 解が複数ある問題・条件を満たす出力を作る問題
 
-検証プログラムを使う問題では`--random-test-mode judge`を指定します。判定用ソースの指定を省略すると、提出用プログラムと同じ言語の`judge.cpp`などを使います。次の設定で`gen`時に`judge.cpp`の雛形も用意します。
+検証プログラムを使う問題では`--random-test-mode judge`を指定します。判定用ソースの指定を省略すると、提出用プログラムと同じ言語の`judge.cpp`などを使います。`judge.cpp`の雛形は`gen`時に生成されます。ファイル名は`judge_filename`で変更できます。
 検証プログラムには、出力が問題の条件を満たすか確認する処理を実装してください。最適化問題では、愚直解の出力から最適値も確認します。
 
 ```toml
@@ -257,7 +257,7 @@ atcoder-tools test
 
 `--random-test-mode interactive`を指定すると、愚直解との比較の代わりに、提出用プログラムと対話用プログラムを接続して実行します。
 対話用ソースの指定を省略すると、提出用プログラムと同じ言語の`interactor.cpp`などを使います。
-このモードでは`naive.cpp`の実装・コンパイルは不要です。`gen`では、次の設定で`interactor.cpp`の雛形も生成します。
+このモードでは`naive.cpp`の実装・コンパイルは不要です。`interactor.cpp`の雛形も`gen`時に生成されます。ファイル名は`interactor_filename`で変更できます。
 
 ```toml
 [random_test]
@@ -277,7 +277,7 @@ atcoder-tools test --random-test --random-test-mode interactive --interactor-exe
 
 失敗時には秘密の入力、解答側と対話側それぞれの送信内容、標準エラー、実行結果を保存します。
 `--random-test-mode`で`normal`・`judge`・`interactive`を選びます。省略時は常に`normal`です。TOMLでは判定方式を指定せず、旧設定に`mode`が残っていても無視します。
-`judge_filename`と`interactor_filename`は両方指定できますが、実行時には選んだ方式の補助プログラムだけを使います。
+`judge_filename`と`interactor_filename`はファイル名を変更するための設定です。指定を省略しても、提出用プログラムと同じ言語でjudgeとinteractorを生成します。実行時には選んだ方式の補助プログラムだけをコンパイル・実行します。
 
 ランダムテスト用の生成を有効にした場合、HTMLの日本語・英語に明記されたインタラクティブ形式や「答えが複数ある場合はどれを出力してもよい」といった文言を検出し、`metadata.json`に記録します。
 HTMLの判別結果は参考情報として保存し、実行時の判定方式は変更しません。問題に応じて`--random-test-mode`で方式を選んでください。

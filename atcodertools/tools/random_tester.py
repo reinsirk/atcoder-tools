@@ -31,8 +31,9 @@ def prepare_random_test_files(problem_dir, main_source, constants, config):
         source = generator_style.code_generator(CodeGenArgs(template, None, constants, generator_style))
         create_code(source, str(generator_path))
         logger.info("Saved generator source to {}".format(generator_path))
-    for filename in (config.random_test_config.judge_filename, config.random_test_config.interactor_filename):
-        if filename and not (Path(problem_dir) / filename).exists():
+    for filename in (config.random_test_config.judge_filename or main_style.lang.get_code_filename("judge"),
+                     config.random_test_config.interactor_filename or main_style.lang.get_code_filename("interactor")):
+        if not (Path(problem_dir) / filename).exists():
             language = source_language(filename)
             style = main_style if main_style.lang == language else CodeStyleConfig(lang=language.name)
             source = style.code_generator(CodeGenArgs(Path(style.template_file).read_text(), None, constants, style))
