@@ -1,6 +1,7 @@
 #!/usr/bin/python3
 import argparse
 import os
+import re
 import shutil
 import sys
 import traceback
@@ -11,6 +12,7 @@ from typing import Tuple
 from colorama import Fore
 
 from atcodertools.client.atcoder import AtCoderClient, Contest, LoginError, PageNotFoundError
+from atcodertools.client.atcoder_problems import AtCoderProblemsClient, AtCoderProblemsError, get_virtual_contest_id
 from atcodertools.client.models.problem import Problem
 from atcodertools.client.models.problem_content import InputFormatDetectionError, SampleDetectionError
 from atcodertools.codegen.code_style_config import DEFAULT_WORKSPACE_DIR_PATH
@@ -51,15 +53,17 @@ def _message_on_execution(cwd: str, cmd: str):
 
 def prepare_procedure(atcoder_client: AtCoderClient,
                       problem: Problem,
-                      config: Config):
+                      config: Config,
+                      workspace_contest_id: str = None,
+                      workspace_alphabet: str = None):
     workspace_root_path = config.code_style_config.workspace_dir
     template_code_path = config.code_style_config.template_file
     lang = config.code_style_config.lang
 
-    pid = problem.get_alphabet()
+    pid = workspace_alphabet or problem.get_alphabet()
     problem_dir_path = os.path.join(
         workspace_root_path,
-        problem.get_contest().get_id(),
+        workspace_contest_id or problem.get_contest().get_id(),
         pid)
 
     def emit_error(text):
@@ -177,8 +181,26 @@ def prepare_procedure(atcoder_client: AtCoderClient,
 
 
 def func(argv: Tuple[AtCoderClient, Problem, Config]):
-    atcoder_client, problem, config = argv
-    prepare_procedure(atcoder_client, problem, config)
+    prepare_procedure(*argv)
+
+
+def _virtual_problem_alphabet(index: int) -> str:
+    alphabet = ""
+    while index >= 0:
+        alphabet = chr(ord("A") + index % 26) + alphabet
+        index = index // 26 - 1
+    return alphabet
+
+
+def _virtual_contest_directory_name(title: str, contest_id: str) -> str:
+    # Keep Japanese, spaces and #, while making the title a single portable path component.
+    name = re.sub(r'[<>:"/\\|?*\x00-\x1f\x7f]',
+                  "_", title).strip().rstrip(" .")
+    if re.fullmatch(r"CON|PRN|AUX|NUL|COM[1-9]|LPT[1-9]", name.split(".")[0], re.IGNORECASE):
+        name = "_" + name
+    name = name.encode("utf-8")[:240].decode("utf-8",
+                                             errors="ignore").rstrip(" .")
+    return name or contest_id
 
 
 def prepare_contest(atcoder_client: AtCoderClient,
@@ -187,25 +209,30 @@ def prepare_contest(atcoder_client: AtCoderClient,
                     retry_delay_secs: float = 1.5,
                     retry_max_delay_secs: float = 60,
                     retry_max_tries: int = 10):
-    attempt_count = 1
-    while True:
-        try:
-            problem_list = atcoder_client.download_problem_list(
-                Contest(contest_id=contest_id))
-            break
-        except PageNotFoundError:
-            if 0 < retry_max_tries < attempt_count:
-                raise EnvironmentInitializationError
-            logger.warning(
-                "Failed to fetch. Will retry in {} seconds. (Attempt {})".format(retry_delay_secs, attempt_count))
-            time.sleep(retry_delay_secs)
-            retry_delay_secs = min(retry_delay_secs * 2, retry_max_delay_secs)
-            attempt_count += 1
+    virtual_contest_id = get_virtual_contest_id(contest_id)
+    if virtual_contest_id is not None:
+        title, problem_list = AtCoderProblemsClient().download_contest(virtual_contest_id)
+        contest_id = _virtual_contest_directory_name(title, virtual_contest_id)
+        tasks = [(atcoder_client, problem, config, contest_id, _virtual_problem_alphabet(index))
+                 for index, problem in enumerate(problem_list)]
+    else:
+        attempt_count = 1
+        while True:
+            try:
+                problem_list = atcoder_client.download_problem_list(
+                    Contest(contest_id=contest_id))
+                break
+            except PageNotFoundError:
+                if 0 < retry_max_tries < attempt_count:
+                    raise EnvironmentInitializationError
+                logger.warning(
+                    "Failed to fetch. Will retry in {} seconds. (Attempt {})".format(retry_delay_secs, attempt_count))
+                time.sleep(retry_delay_secs)
+                retry_delay_secs = min(
+                    retry_delay_secs * 2, retry_max_delay_secs)
+                attempt_count += 1
 
-    tasks = [(atcoder_client,
-              problem,
-              config) for
-             problem in problem_list]
+        tasks = [(atcoder_client, problem, config) for problem in problem_list]
 
     output_splitter()
 
@@ -256,7 +283,7 @@ def main(prog, args):
         formatter_class=argparse.RawTextHelpFormatter)
 
     parser.add_argument("contest_id",
-                        help="Contest ID (e.g. arc001)")
+                        help="Contest ID (e.g. arc001), or AtCoder Problems virtual contest URL/ID")
 
     parser.add_argument("--without-login",
                         action="store_true",
@@ -308,6 +335,13 @@ def main(prog, args):
 
     args = parser.parse_args(args)
 
+    try:
+        virtual_contest_id = get_virtual_contest_id(args.contest_id)
+    except ValueError as e:
+        parser.error(str(e))
+    if virtual_contest_id is not None:
+        args.contest_id = virtual_contest_id
+
     if args.replacement is not None:
         logger.error(with_color("Sorry! --replacement argument no longer exists"
                                 " and you can only use --template."
@@ -335,9 +369,13 @@ def main(prog, args):
     else:
         logger.info("Downloading data without login.")
 
-    prepare_contest(client,
-                    args.contest_id,
-                    config)
+    try:
+        prepare_contest(client,
+                        args.contest_id,
+                        config)
+    except AtCoderProblemsError as e:
+        logger.error(str(e))
+        sys.exit(1)
 
 
 if __name__ == "__main__":
