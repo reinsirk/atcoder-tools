@@ -8,7 +8,8 @@ from atcodertools.common.language import Language, CPP
 class Metadata:
 
     def __init__(self, problem: Problem, code_filename: str, sample_in_pattern: str, sample_out_pattern: str,
-                 lang: Language, judge_method: Judge = NormalJudge(), timeout_ms: int = None):
+                 lang: Language, judge_method: Judge = NormalJudge(), timeout_ms: int = None,
+                 problem_type: str = "batch"):
         self.problem = problem
         self.code_filename = code_filename
         self.sample_in_pattern = sample_in_pattern
@@ -16,9 +17,10 @@ class Metadata:
         self.lang = lang
         self.judge_method = judge_method
         self.timeout_ms = timeout_ms
+        self.problem_type = problem_type
 
     def to_dict(self):
-        return {
+        result = {
             "problem": self.problem.to_dict(),
             "code_filename": self.code_filename,
             "sample_in_pattern": self.sample_in_pattern,
@@ -27,6 +29,9 @@ class Metadata:
             "judge": self.judge_method.to_dict(),
             "timeout_ms": self.timeout_ms,
         }
+        if self.problem_type != "batch":
+            result["problem_type"] = self.problem_type
+        return result
 
     @classmethod
     def from_dict(cls, dic):
@@ -53,7 +58,8 @@ class Metadata:
             sample_out_pattern=dic["sample_out_pattern"],
             lang=Language.from_name(dic["lang"]),
             judge_method=judge_method,
-            timeout_ms=timeout_ms
+            timeout_ms=timeout_ms,
+            problem_type=dic.get("problem_type", "batch")
         )
 
     @classmethod
