@@ -109,6 +109,22 @@ class ProblemContent:
         ):
             element.extract()
 
+        # Interactive tasks may describe their protocol in either the problem
+        # statement or an input/output section. Their transcripts are not
+        # ordinary sample input/output pairs.
+        for section in soup.select('section'):
+            heading = section.find('h3')
+            if heading is None:
+                continue
+
+            title = remove_non_jp_characters(heading.get_text())
+            if title not in ("問題文", "入出力", "入力", "対話"):
+                continue
+
+            context = section.get_text(" ", strip=True)
+            if "インタラクティブな問題" in "".join(context.split()):
+                return "", [], normalize_context(context), []
+
         # Focus on AtCoder's usual contest HTML structure.
         parts = soup.select('.part')
         if parts:
