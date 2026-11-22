@@ -29,3 +29,15 @@ save_no_session_cache=false
 skip_existing_problems=false
 in_example_format="in_{}.txt"
 out_example_format="out_{}.txt"
+
+[random_test]
+enabled=false # Create naive, generator, judge and interactor sources alongside main during gen
+generator_filename="generate.cpp" # The extension selects the generator language
+iterations=1000 # 0: repeat until failure or Ctrl+C
+# Select normal (default), judge or interactive with --random-test-mode when running tests.
+#judge_filename="judge.cpp" # argv: input path, reference output path, solution output path
+#interactor_filename="interactor.cpp" # argv: generated case path; communicate over stdio
+#naive_template_file="~/templates/naive.cpp"
+#generator_template_file="~/templates/generate.cpp"
+#judge_template_file="~/templates/judge.cpp"
+#interactor_template_file="~/templates/interactor.cpp"
