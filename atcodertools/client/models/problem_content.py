@@ -182,7 +182,7 @@ class ProblemContent:
             context = section.get_text(" ", strip=True)
             compact_context = "".join(context.split())
 
-            if title == "問題文" and "インタラクティブな問題" in compact_context:
+            if title in ("問題文", "入出力", "入力", "対話") and "インタラクティブな問題" in compact_context:
                 return context
 
             if title == "入力" and not section.find('pre'):
