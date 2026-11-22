@@ -2,11 +2,14 @@ import re
 from pathlib import Path
 
 from atcodertools.common.language import ALL_LANGUAGES
+from atcodertools.fileutils.normalize import normalize_path
 
 
 class RandomTestConfig:
     def __init__(self, enabled: bool = False, generator_filename: str = "generate.cpp", iterations: int = 1000,
-                 judge_filename: str = None, interactor_filename: str = None):
+                 judge_filename: str = None, interactor_filename: str = None,
+                 naive_template_file: str = None, generator_template_file: str = None,
+                 judge_template_file: str = None, interactor_template_file: str = None):
         if type(enabled) is not bool:
             raise ValueError("enabled must be true or false")
         self.enabled = enabled
@@ -26,6 +29,16 @@ class RandomTestConfig:
             names.add(Path(filename).stem)
         self.judge_filename = judge_filename
         self.interactor_filename = interactor_filename
+        for name, path in (("naive_template_file", naive_template_file),
+                           ("generator_template_file", generator_template_file),
+                           ("judge_template_file", judge_template_file),
+                           ("interactor_template_file", interactor_template_file)):
+            if path is not None and (not isinstance(path, str) or not path):
+                raise ValueError("{} must be a template file path".format(name))
+            path = normalize_path(path)
+            if path is not None and not Path(path).is_file():
+                raise ValueError("{}: template file not found: {}".format(name, path))
+            setattr(self, name, path)
 
 
 def source_language(filename):

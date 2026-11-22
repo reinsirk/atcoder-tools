@@ -13,30 +13,38 @@ from atcodertools.fileutils.create_contest_file import create_code
 from atcodertools.tools.compiler import _compile, BadStatusCodeException
 
 
-def prepare_random_test_files(problem_dir, main_source, constants, config):
+def prepare_random_test_files(problem_dir, main_source, constants, config, input_format=None):
     """Keep user-written helpers intact when gen is run again."""
     main_style = config.code_style_config
-    generator_lang = config.random_test_config.generator_language
+    random_config = config.random_test_config
+    generator_lang = random_config.generator_language
     generator_style = config.generator_code_style_config
     if generator_style is None:
         generator_style = (main_style if main_style.lang == generator_lang
                            else CodeStyleConfig(lang=generator_lang.name))
     naive_path = Path(problem_dir) / main_style.lang.get_code_filename("naive")
     generator_path = Path(problem_dir) / config.random_test_config.generator_filename
+
+    def render_source(style, template_file, format_=None):
+        template = Path(template_file or style.template_file).read_text()
+        return style.code_generator(CodeGenArgs(template, format_, constants, style))
+
     if not naive_path.exists():
-        create_code(main_source, str(naive_path))
+        source = (render_source(main_style, random_config.naive_template_file, input_format)
+                  if random_config.naive_template_file else main_source)
+        create_code(source, str(naive_path))
         logger.info("Saved naive source to {}".format(naive_path))
     if not generator_path.exists():
-        template = Path(generator_style.template_file).read_text()
-        source = generator_style.code_generator(CodeGenArgs(template, None, constants, generator_style))
+        source = render_source(generator_style, random_config.generator_template_file)
         create_code(source, str(generator_path))
         logger.info("Saved generator source to {}".format(generator_path))
-    for filename in (config.random_test_config.judge_filename or main_style.lang.get_code_filename("judge"),
-                     config.random_test_config.interactor_filename or main_style.lang.get_code_filename("interactor")):
+    for filename, template_file in (
+            (random_config.judge_filename or main_style.lang.get_code_filename("judge"), random_config.judge_template_file),
+            (random_config.interactor_filename or main_style.lang.get_code_filename("interactor"), random_config.interactor_template_file)):
         if not (Path(problem_dir) / filename).exists():
             language = source_language(filename)
             style = main_style if main_style.lang == language else CodeStyleConfig(lang=language.name)
-            source = style.code_generator(CodeGenArgs(Path(style.template_file).read_text(), None, constants, style))
+            source = render_source(style, template_file)
             create_code(source, str(Path(problem_dir) / filename))
             logger.info("Saved judge source to {}".format(filename))
 

@@ -150,7 +150,8 @@ def prepare_procedure(atcoder_client: AtCoderClient,
     emit_info("Saved code to {}".format(code_file_path))
 
     if config.random_test_config.enabled:
-        prepare_random_test_files(problem_dir_path, source_code, constants, config)
+        prepare_random_test_files(problem_dir_path, source_code, constants, config,
+                                  input_format=prediction_result.format)
 
     # Save metadata
     metadata_path = os.path.join(problem_dir_path, "metadata.json")

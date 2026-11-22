@@ -189,7 +189,7 @@ generator_filename = "generate.cpp"
 iterations = 1000
 ```
 
-`naive.cpp`は`main.cpp`と同じテンプレート・入力処理を使います。`generate.cpp`も同じテンプレートを使いますが、標準入力を読む処理は生成しません。
+個別のテンプレートを指定しなければ、`naive.cpp`は`main.cpp`と同じテンプレート・入力処理を使います。`generate.cpp`も同じテンプレートを使いますが、標準入力を読む処理は生成しません。
 愚直解には単純な解法を、generatorには問題の制約を満たす小さなランダム入力を標準出力へ書く処理を実装してください。generatorは各ケースにつき1回起動されるため、乱数の種には`std::random_device`などを使ってください。
 `gen`を再実行しても、既存の補助ファイルは上書きしません。使う方式に必要なファイルを実装してください。`enabled`の既定値は`false`です。
 
@@ -210,6 +210,23 @@ atcoder-tools test --random-test --iterations 0
 `generator_filename`でファイル名と拡張子を指定できます。例えば`generator.cpp`や`generate.py`を指定すると、拡張子に対応する言語でコンパイル・実行します。
 generatorが提出用プログラムと異なる言語の場合は、その言語の標準テンプレートを使います。カスタムテンプレートは`[codestyle.python]`などの言語別テーブルで指定できます。
 愚直解は提出用プログラムと同じ言語で生成します。補助ファイルを手動で作れば、`enabled = false`でもランダムテストを実行できます。
+
+補助ファイルごとに専用テンプレートを指定することもできます。次の項目を同じ`[random_test]`内に追加してください。使いたい項目だけ指定できます。
+
+```toml
+[random_test]
+enabled = true
+judge_template_file = "~/templates/judge.cpp"
+interactor_template_file = "~/templates/interactor.cpp"
+# naive_template_file = "~/templates/naive.cpp"
+# generator_template_file = "~/templates/generate.cpp"
+```
+
+指定するテンプレートファイルはあらかじめ作成してください。`~`はホームディレクトリに展開します。
+`judge_template_file`と`interactor_template_file`には、`int main(int argc, char* argv[])`を持つ専用の雛形などを指定できます。通常のC++コードに加え、mainと同様にJinja2の変数や条件分岐も使用できます。
+`naive_template_file`ではmainと同じ予測結果を使って入力処理を展開できます。generator・judge・interactorでは入力形式を渡さずにテンプレートを展開します。
+省略した項目には従来のテンプレートを使います。同じ言語ならmainのテンプレート、異なる言語のjudge・interactorならその言語の標準テンプレートを使います。generatorは前述の言語別テンプレート設定も利用できます。
+専用テンプレートを指定しても、生成済みの補助ファイルは上書きしません。変更を反映したい場合は、該当の補助ファイルを別名で保存してから`gen`を再実行してください。
 
 コンパイル設定は`[tester]`または`[compiler]`の`compile_command`を使います。同じ言語の3つのファイルに共通の設定を適用するには、ファイル名を`{filename}`で指定してください。
 固定の`main.cpp`を指定した既存のコンパイル設定では、補助ファイルに標準のコンパイル設定を使います。異なる言語のgeneratorにも標準のコンパイル設定を使います。

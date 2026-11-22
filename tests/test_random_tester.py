@@ -1,4 +1,5 @@
 import io
+import os
 import shutil
 import subprocess
 import tempfile
@@ -20,6 +21,10 @@ from atcodertools.constprediction.models.problem_constant_set import ProblemCons
 from atcodertools.constprediction.problem_type_prediction import predict_problem_type
 from atcodertools.executils.run_program import ExecResult, ExecStatus
 from atcodertools.executils.run_interactive import run_interactive
+from atcodertools.fmtprediction.models.format import Format, SingularPattern
+from atcodertools.fmtprediction.models.format_prediction_result import FormatPredictionResult
+from atcodertools.fmtprediction.models.type import Type
+from atcodertools.fmtprediction.models.variable import Variable
 from atcodertools.tools import envgen, tester
 from atcodertools.tools.models.metadata import Metadata
 from atcodertools.tools.random_tester import prepare_random_test_files, run_random_tests
@@ -354,6 +359,72 @@ class TestRandomTester(unittest.TestCase):
 
 
 class TestRandomTestGeneration(unittest.TestCase):
+    def test_each_helper_can_use_its_own_template(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            template_dir = root / "templates"
+            template_dir.mkdir()
+            template_paths = {}
+            for name in ("naive", "generator", "judge", "interactor"):
+                path = template_dir / (name + ".cpp")
+                path.write_text("// " + name + " {{mod}}\nint main(int argc,char** argv){\n"
+                                "{% if prediction_success %}{{input_part}}{% endif %}\nreturn 0;\n}")
+                template_paths[name + "_template_file"] = str(path)
+            random_config = RandomTestConfig(enabled=True, **template_paths)
+            config = Config(code_style_config=CodeStyleConfig(workspace_dir=directory),
+                            random_test_config=random_config)
+            format_ = Format()
+            format_.push_back(SingularPattern(Variable("N", None, None, Type.int)))
+            client = Mock()
+            content = Mock(original_html="")
+            content.get_samples.return_value = []
+            client.download_problem_content.return_value = content
+            constants = ProblemConstantSet(mod=7, judge_method=NormalJudge())
+            with patch("atcodertools.tools.envgen.predict_format", return_value=FormatPredictionResult(format_)), \
+                    patch("atcodertools.tools.envgen.predict_constants", return_value=constants):
+                envgen.prepare_procedure(client, Problem(Contest("abc001"), "A", "abc001_1"), config)
+            output_dir = root / "abc001" / "A"
+            for name in ("naive", "generator", "judge", "interactor"):
+                filename = "generate.cpp" if name == "generator" else name + ".cpp"
+                source = (output_dir / filename).read_text()
+                self.assertIn("// " + name + " 7", source)
+                self.assertIn("int main(int argc,char** argv)", source)
+                self.assertEqual("N" in source, name == "naive")
+                (output_dir / filename).write_text("user code")
+            self.assertNotIn("// naive 7", (output_dir / "main.cpp").read_text())
+            prepare_random_test_files(str(output_dir), "new main", constants, config, input_format=format_)
+            for filename in ("naive.cpp", "generate.cpp", "judge.cpp", "interactor.cpp"):
+                self.assertEqual((output_dir / filename).read_text(), "user code")
+
+    def test_template_paths_load_from_toml_and_expand_home(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for name in ("naive", "generator", "judge", "interactor"):
+                (root / (name + ".cpp")).write_text("// " + name + "\nint main(){}")
+            toml = '[random_test]\nenabled=true\n' + "\n".join(
+                name + '_template_file="~/' + name + '.cpp"' for name in ("naive", "generator", "judge", "interactor"))
+            with patch.dict(os.environ, {"HOME": directory}):
+                config = Config.load(io.StringIO(toml), {ConfigType.RANDOM_TEST})
+            for name in ("naive", "generator", "judge", "interactor"):
+                self.assertEqual(getattr(config.random_test_config, name + "_template_file"),
+                                 str(root / (name + ".cpp")))
+
+    def test_invalid_template_paths(self):
+        with tempfile.TemporaryDirectory() as directory:
+            for name in ("naive", "generator", "judge", "interactor"):
+                for path in ("", 123, directory, str(Path(directory) / "missing.cpp")):
+                    with self.subTest(name=name, path=path), self.assertRaises(ValueError):
+                        RandomTestConfig(**{name + "_template_file": path})
+
+    def test_custom_template_works_for_a_different_helper_language(self):
+        with tempfile.TemporaryDirectory() as directory:
+            template = Path(directory) / "checker-template.py"
+            template.write_text("# Python checker\nprint({{mod}})")
+            config = Config(random_test_config=RandomTestConfig(
+                enabled=True, judge_filename="checker.py", judge_template_file=str(template)))
+            prepare_random_test_files(directory, "main", ProblemConstantSet(mod=7), config)
+            self.assertEqual((Path(directory) / "checker.py").read_text().strip(), "# Python checker\nprint(7)")
+
     def test_default_disabled_and_config_validation(self):
         self.assertFalse(Config().random_test_config.enabled)
         for values in ({"iterations": -1}, {"iterations": True}, {"enabled": "true"},
