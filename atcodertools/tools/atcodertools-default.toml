@@ -22,6 +22,9 @@ lang = 'cpp' # 'cpp' or 'java' (Currently)
 ## with the contest directory as cwd like arc001/
 #exec_on_contest_dir=
 
+[tester]
+ignore_whitespace=false
+
 [etc]
 download_without_login=false
 parallel_download=false

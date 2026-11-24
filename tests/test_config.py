@@ -1,6 +1,7 @@
 import unittest
 import os
 import tempfile
+import io
 
 from atcodertools.codegen.code_style_config import CodeStyleConfig, INDENT_TYPE_SPACE, CodeStyleConfigInitError, \
     INDENT_TYPE_TAB
@@ -15,6 +16,37 @@ from atcodertools.constprediction.models.problem_constant_set import ProblemCons
 RESOURCE_DIR = os.path.join(
     os.path.dirname(os.path.abspath(__file__)),
     "./resources/test_config/")
+
+
+class TestTesterConfig(unittest.TestCase):
+    def test_load_whitespace_comparison_mode(self):
+        cases = [
+            ("", False),
+            ("[tester]\n", False),
+            ("[tester]\nignore_whitespace=true\n", True),
+            ("[tester]\nignore_whitespace=false\n", False),
+            ("[tester]\nignore_whitespace=true\n[tester.cpp]\nignore_whitespace=false\n", False),
+            ("[tester]\nignore_whitespace=false\n[tester.cpp]\nignore_whitespace=true\n", True),
+        ]
+        for text, expected in cases:
+            with self.subTest(text=text):
+                config = Config.load(io.StringIO(
+                    text), {ConfigType.TESTER}, lang="cpp")
+                self.assertEqual(
+                    expected, config.tester_config.ignore_whitespace)
+
+    def test_default_config_uses_exact_comparison(self):
+        self.assertFalse(Config().tester_config.ignore_whitespace)
+        with open(get_default_config_path()) as f:
+            config = Config.load(f, {ConfigType.TESTER})
+        self.assertFalse(config.tester_config.ignore_whitespace)
+
+    def test_rejects_non_boolean_whitespace_option(self):
+        for value in ['"false"', '0', '1', '[]']:
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(ValueError, 'ignore_whitespace must be a boolean'):
+                    Config.load(io.StringIO('[tester]\nignore_whitespace={}\n'.format(value)),
+                                {ConfigType.TESTER})
 
 
 class TestConfig(unittest.TestCase):

@@ -248,7 +248,8 @@ USER_FACING_JUDGE_TYPE_LIST = [
     "normal", "absolute", "relative", "absolute_or_relative"]
 
 
-def _decide_judge_method(args: argparse.Namespace, metadata: Metadata, lang: Optional[Language]):
+def _decide_judge_method(args: argparse.Namespace, metadata: Metadata, lang: Optional[Language],
+                         ignore_whitespace: bool = False):
     def _decide_decimal_judge():
         if args.error_value is not None:
             diff = args.error_value
@@ -270,7 +271,7 @@ def _decide_judge_method(args: argparse.Namespace, metadata: Metadata, lang: Opt
 
     if args.judge_type is not None:
         if args.judge_type == "normal":
-            return NormalJudge()
+            return NormalJudge(ignore_whitespace=ignore_whitespace)
         elif args.judge_type in ["absolute", "relative", "absolute_or_relative"]:
             return _decide_decimal_judge()
         else:
@@ -280,6 +281,9 @@ def _decide_judge_method(args: argparse.Namespace, metadata: Metadata, lang: Opt
 
     if isinstance(metadata.judge_method, DecimalJudge):
         return _decide_decimal_judge()
+
+    if isinstance(metadata.judge_method, NormalJudge):
+        return NormalJudge(ignore_whitespace=ignore_whitespace)
 
     return metadata.judge_method
 
@@ -388,7 +392,8 @@ def main(prog, args) -> bool:
     out_sample_file_list = sorted(
         glob.glob(os.path.join(args.dir, metadata.sample_out_pattern)))
 
-    judge_method = _decide_judge_method(args, metadata, lang)
+    judge_method = _decide_judge_method(
+        args, metadata, lang, config.tester_config.ignore_whitespace)
 
     if isinstance(judge_method, DecimalJudge):
         logger.info("Decimal number judge is enabled. type={}, diff={}".format(

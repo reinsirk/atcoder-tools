@@ -128,7 +128,7 @@ def main(prog, args, cookie_supplier=None, use_local_session_cache=True, client=
             logger.error(e)
             return False
 
-    tester_args = []
+    tester_args = ["--config", args.config]
     if args.exec:
         tester_args += ["-e", args.exec]
     if args.dir:

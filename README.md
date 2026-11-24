@@ -140,6 +140,25 @@ optional arguments:
 
 ### test の詳細
 
+通常の判定（`normal`）では、既定で出力を完全一致で比較します。
+TOML設定の `ignore_whitespace` の既定値は `false` です。省略した場合も、先頭・末尾の空白や改行位置、末尾改行の有無を比較します。
+改行コードは従来どおり読み込み時に正規化されるため、CRLFとLFの違いは区別しません。
+
+空白の違いを無視したい場合は、TOML設定ファイルに次の設定を追加してください。
+
+```toml
+[tester]
+ignore_whitespace=true
+```
+
+`true` を明示した場合に限り、出力をCR（`\r`）・LF（`\n`）・半角スペース・タブ（`\t`）の4種類の文字で区切って比較します。
+これらの文字については、先頭・末尾への追加や、区切りの数・種類の違いを無視し、各要素の内容と順序が一致すれば正解になります。
+全角スペースなど、それ以外の空白文字は無視しません。
+この設定は通常判定（`normal`）に適用され、小数の誤差判定には影響しません。
+
+`atcoder-tools test --config ./config.toml` のように設定ファイルを指定できます。
+`submit --config ./config.toml` の提出前テストにも同じ設定が適用されます。
+
 ```
 usage: atcoder-tools test [-h] [--exec EXEC] [--num NUM]
                                          [--dir DIR] [--timeout TIMEOUT]
@@ -239,6 +258,7 @@ optional arguments:
 - `compile_before_testing` テスト前にコンパイルを実行するか否かをTrue/Falseで指定。何も指定しないとFalseとなります。
 - `compile_only_when_diff_detected` テスト前のコンパイルの際、元のソースに変更があった場合のみ実行するかをTrue/Falseで指定。何も指定しないとFalseとなります。
 - `timeout_adjustment=1.2` 問題文に記載された実行時間制限にこの値をかけた秒数がローカルテストの際の実行時間制限になります。例えばatcoderで制限時間2秒の問題は2x1.2=2.4秒となります。atcoderとローカルの実行環境が異なる場合の調整に使用してください。
+- `ignore_whitespace=false` 通常判定で完全一致で比較します。既定値は `false` です。`true` を明示するとCR・LF・半角スペース・タブの違いを無視します。
 
 なお、`compile_before_testing`, `compile_only_when_diff_detected`はいずれもtesterの引数で指定することも可能で、指定した場合はそちらが優先されます。
 
@@ -268,6 +288,7 @@ compile_only_when_diff_detected=true
 compile_before_testing=true
 compile_only_when_diff_detected=true
 timeout_adjustment=1.2
+ignore_whitespace=false
 [etc]
 download_without_login=false
 parallel_download=false

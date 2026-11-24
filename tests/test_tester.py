@@ -4,6 +4,7 @@ import shutil
 import tempfile
 import io
 import sys
+from argparse import Namespace
 
 from colorama import Fore
 from unittest.mock import patch, mock_open, MagicMock
@@ -12,7 +13,9 @@ from atcodertools.executils.run_program import ExecResult, ExecStatus
 from atcodertools.tools import tester
 from atcodertools.tools.tester import is_executable_file, TestSummary, build_details_str
 from atcodertools.tools.utils import with_color
-from atcodertools.common.language import ALL_LANGUAGES
+from atcodertools.common.language import ALL_LANGUAGES, CPP
+from atcodertools.common.judgetype import DecimalJudge
+from atcodertools.tools.models.metadata import DEFAULT_METADATA, Metadata
 from atcodertools.tools.compiler import compile_main_and_judge_programs
 
 RESOURCE_DIR = os.path.abspath(os.path.join(
@@ -33,6 +36,69 @@ class TestTester(unittest.TestCase):
         test_dir = os.path.join(RESOURCE_DIR, "test_run_single_test")
         self.assertTrue(tester.main('', ['-d', test_dir, "-n", "1"]))
         self.assertFalse(tester.main('', ['-d', test_dir, "-n", "2"]))
+
+    def test_normal_judge_defaults_to_exact_comparison(self):
+        with tempfile.TemporaryDirectory() as test_dir:
+            source = os.path.join(test_dir, 'main.py')
+            with open(source, 'w') as f:
+                f.write("import sys\nsys.stdout.write('  1 \\t2  \\n\\n3  ')")
+            with open(os.path.join(test_dir, 'in_1.txt'), 'w') as f:
+                f.write('')
+            with open(os.path.join(test_dir, 'out_1.txt'), 'w') as f:
+                f.write('1 2\n3\n')
+
+            args = ['-d', test_dir, '-e',
+                    '{} {}'.format(sys.executable, source),
+                    '--config', tester.get_default_config_path()]
+            self.assertFalse(tester.main('', args))
+            self.assertFalse(tester.main(
+                '', args + ['-n', '1', '-j', 'normal']))
+
+    def test_whitespace_comparison_option(self):
+        with tempfile.TemporaryDirectory() as test_dir:
+            source = os.path.join(test_dir, 'main.py')
+            with open(source, 'w') as f:
+                f.write('import sys\nsys.stdout.write(sys.stdin.read())\n')
+            config_path = os.path.join(test_dir, 'config.toml')
+            args = ['-d', test_dir, '-e', '{} {}'.format(sys.executable, source),
+                    '--config', config_path]
+            cases = [
+                ('1 2\n', '1 2\n', True, True),
+                (' 1\t2 \n', '1 2\n', False, True),
+                ('1 2', '1 2\n', False, True),
+                ('', '\n', False, True),
+                ('1\u30002\n', '1 2\n', False, False),
+                ('1 3\n', '1 2\n', False, False),
+            ]
+            for ignore_whitespace in [None, False, True]:
+                with open(config_path, 'w') as f:
+                    f.write('[tester]\n')
+                    if ignore_whitespace is not None:
+                        f.write('ignore_whitespace={}\n'.format(
+                            str(ignore_whitespace).lower()))
+                for output, expected, exact_match, relaxed_match in cases:
+                    with open(os.path.join(test_dir, 'in_1.txt'), 'w') as f:
+                        f.write(output)
+                    with open(os.path.join(test_dir, 'out_1.txt'), 'w') as f:
+                        f.write(expected)
+                    correct = relaxed_match if ignore_whitespace else exact_match
+                    for options in [[], ['-n', '1', '-j', 'normal']]:
+                        with self.subTest(ignore_whitespace=ignore_whitespace, output=output, options=options):
+                            self.assertEqual(
+                                correct, tester.main('', args + options))
+            self.assertFalse(DEFAULT_METADATA.judge_method.ignore_whitespace)
+
+    def test_decimal_judge_is_unaffected_by_whitespace_option(self):
+        args = Namespace(judge_type=None, error_value=None)
+        metadata = Metadata(None, None, 'in_*.txt', 'out_*.txt',
+                            CPP, DecimalJudge(diff=0.01))
+        for judge_type in [None, 'absolute', 'relative', 'absolute_or_relative']:
+            args.judge_type = judge_type
+            with self.subTest(judge_type=judge_type):
+                judge = tester._decide_judge_method(
+                    args, metadata, metadata.lang, ignore_whitespace=False)
+                self.assertIsInstance(judge, DecimalJudge)
+                self.assertTrue(judge.verify(' 1.001 \n', '1.0\n'))
 
     def test_run_single_test_decimal_addition(self):
         test_dir = os.path.join(

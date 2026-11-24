@@ -1,5 +1,6 @@
 #!/usr/bin/python3
 # -*- coding: utf-8 -*-
+import re
 from abc import ABCMeta, abstractmethod
 from enum import Enum
 
@@ -34,20 +35,27 @@ class Judge(metaclass=ABCMeta):
 
 
 class NormalJudge(Judge):
-    def __init__(self):
+    def __init__(self, ignore_whitespace: bool = False):
         self.judge_type = JudgeType.Normal
+        self.ignore_whitespace = ignore_whitespace
 
     def verify(self, output, expected):
-        return output == expected
+        if not self.ignore_whitespace:
+            return output == expected
+        pattern = r"[^ \t\r\n]+"
+        return re.findall(pattern, output) == re.findall(pattern, expected)
 
     def to_dict(self):
-        return {
+        result = {
             "judge_type": self.judge_type.value,
         }
+        if self.ignore_whitespace:
+            result["ignore_whitespace"] = True
+        return result
 
     @classmethod
     def from_dict(cls, dic):
-        r = NormalJudge()
+        r = NormalJudge(ignore_whitespace=dic.get("ignore_whitespace", False))
         return r
 
 
